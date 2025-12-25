@@ -6,7 +6,8 @@ import {
   Loader2, Download,
   Bot, X, AlertCircle, Plus,
   RefreshCw, Edit, Maximize2, Headset, Check,
-  Square, CheckSquare, Link as LinkIcon, Megaphone, ExternalLink, Lock
+  Square, CheckSquare, Link as LinkIcon, Megaphone, ExternalLink, Lock,
+  History, Copy, ClipboardCheck
 } from 'lucide-react';
 
 // --- Types & Declarations ---
@@ -86,7 +87,7 @@ const GROK_RATIOS = ['1:1', '3:4', '4:3', '9:16', '16:9'];
 const MODELS: ModelDefinition[] = [
   { 
     id: 'gemini-2.5-flash-image', 
-    name: 'Nano Banana', 
+    name: 'NANO BANANA', 
     cost: 'Flash',
     features: ['fast'],
     maxImages: 4,
@@ -168,7 +169,7 @@ const VIDEO_MODELS = [
   },
   { 
     id: 'sora-2-pro', 
-    name: 'Sora 2 Pro（不建议使用）', 
+    name: 'Sora 2 Pro', 
     desc: '高清/长效', 
     options: [
       {s: '15', q: '高清'}, 
@@ -352,6 +353,7 @@ const App = () => {
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionStart, setSelectionStart] = useState({ x: 0, y: 0 });
   const [selectionCurrent, setSelectionCurrent] = useState({ x: 0, y: 0 });
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const galleryRef = useRef<HTMLDivElement>(null);
 
@@ -755,9 +757,9 @@ const App = () => {
 
   const handleAssetEdit = (asset: GeneratedAsset) => {
      if (asset.url) {
-        const matches = asset.url.match(/^data:(.+);base64,(.+)$/);
+        const matches = asset.url.match(/^data:([^;]+);base64,(.+)$/);
         const mimeType = matches ? matches[1] : 'image/png';
-        const data = matches ? (asset.url.startsWith('data:') ? matches[2] : asset.url) : asset.url;
+        const data = matches ? matches[2] : asset.url;
         
         setReferenceImages(prev => {
            const currentModel = MODELS.find(m => m.id === selectedModel);
@@ -774,8 +776,17 @@ const App = () => {
   const handleAssetGenVideo = (asset: GeneratedAsset) => { 
     setMainCategory('video'); 
     if (asset.url) {
-        setReferenceImages([{ id: generateUUID(), mimeType: 'image/png', data: asset.url }]);
+        const matches = asset.url.match(/^data:([^;]+);base64,(.+)$/);
+        const mimeType = matches ? matches[1] : 'image/png';
+        const data = matches ? matches[2] : asset.url;
+        setReferenceImages([{ id: generateUUID(), mimeType, data }]);
     }
+  };
+
+  const handleCopyPrompt = (p: string, id: string) => {
+    navigator.clipboard.writeText(p);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const currentImageModel = MODELS.find(m => m.id === selectedModel);
@@ -790,16 +801,21 @@ const App = () => {
       
       {/* SIDEBAR */}
       <div className="w-full md:w-[450px] bg-white border-r-4 border-black flex flex-col z-20 brutalist-shadow">
-        <header className="bg-brand-yellow px-6 border-b-4 border-black h-24 flex items-center gap-3 transition-colors duration-300">
-          <div className="w-12 h-12 bg-brand-red flex items-center justify-center brutalist-border transition-colors duration-300">
-            <Sparkles className="w-8 h-8 text-white" />
+        <header className="bg-brand-yellow px-6 border-b-4 border-black h-24 flex items-center justify-between transition-colors duration-300">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-brand-red flex items-center justify-center brutalist-border transition-colors duration-300">
+              <Sparkles className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-4xl font-bold comic-title tracking-[-0.05em] text-black">VIVA智绘工坊</h1>
           </div>
-          <h1 className="text-4xl font-bold comic-title tracking-[-0.05em] text-black">VIVA智绘工坊</h1>
+          <a href="https://www.vivaapi.cn/console/log" target="_blank" title="使用日志" className="w-10 h-10 bg-white border-2 border-black flex items-center justify-center brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
+            <History className="w-6 h-6" />
+          </a>
         </header>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
           <section className="space-y-4">
-            <SectionLabel text="1. 创作类型 / Creation Type" />
+            <SectionLabel text="1.创作类型 / Creation Type" />
             <div className="flex gap-4">
               <button onClick={() => setMainCategory('image')} className={`flex-1 py-3 border-2 border-black font-normal uppercase transition-all ${mainCategory === 'image' ? 'bg-brand-yellow brutalist-shadow-sm translate-y-[-2px]' : 'bg-white'}`}>图片创作</button>
               <button onClick={() => setMainCategory('video')} className={`flex-1 py-3 border-2 border-black font-normal uppercase transition-all ${mainCategory === 'video' ? 'bg-brand-red text-white brutalist-shadow-sm translate-y-[-2px]' : 'bg-white'}`}>视频制作</button>
@@ -833,9 +849,9 @@ const App = () => {
                         )}
                     </div>
                 ) : (
-                    <label className="w-full py-3 flex flex-col items-center justify-center bg-brand-purple text-white border-2 border-black brutalist-shadow-sm cursor-pointer font-normal uppercase text-xs hover:translate-y-1 hover:shadow-none transition-all">
+                    <label className="w-full py-3 flex flex-col items-center justify-center bg-brand-purple text-white border-2 border-black brutalist-shadow-sm cursor-pointer font-normal uppercase text-sm hover:translate-y-1 hover:shadow-none transition-all">
                         <input type="file" multiple={mainCategory === 'image'} className="hidden" onChange={handleImageUpload} />
-                        UPLOAD CO-STAR / REFERENCE
+                        上传图片/UPLOAD
                     </label>
                 )}
             </div>
@@ -898,7 +914,7 @@ const App = () => {
               <div className="space-y-1">
                 <div className="flex justify-between items-end mb-1">
                   <label className={labelClass}>提示词描述 PROMPT</label>
-                  <button onClick={optimizePrompt} disabled={isOptimizing} className="px-2 py-0.5 bg-brand-yellow border-2 border-black font-normal text-[10px] brutalist-shadow-sm hover:translate-y-1 hover:shadow-none transition-all uppercase">
+                  <button onClick={optimizePrompt} disabled={isOptimizing} className="px-2 py-0.5 bg-brand-yellow border-2 border-black font-normal text-sm brutalist-shadow-sm hover:translate-y-1 hover:shadow-none transition-all uppercase">
                     {isOptimizing ? <Loader2 className="w-3 animate-spin"/> : 'AI优化'}
                   </button>
                 </div>
@@ -1000,7 +1016,22 @@ const App = () => {
                     </span>
                     <span className="font-bold text-[10px] text-white bg-black px-1.5 py-0.5 uppercase">{asset.genTimeLabel}</span>
                   </div>
-                  <p className="text-[11px] font-normal line-clamp-2 leading-tight">"{asset.prompt}"</p>
+                  
+                  <div className="relative group/prompt">
+                    <p className="text-[11px] font-normal line-clamp-2 leading-tight pr-6 transition-colors group-hover/prompt:text-brand-blue" title={asset.prompt}>
+                      "{asset.prompt}"
+                    </p>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopyPrompt(asset.prompt, asset.id);
+                      }}
+                      className="absolute top-0 right-0 opacity-0 group-hover/prompt:opacity-100 p-1 bg-white border border-black hover:bg-brand-yellow transition-all brutalist-shadow-sm flex items-center justify-center"
+                      title="点击复制提示词"
+                    >
+                      {copiedId === asset.id ? <ClipboardCheck className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3" />}
+                    </button>
+                  </div>
                   
                   <div className="pt-2 flex gap-2 border-t border-slate-100">
                      <button disabled={asset.status !== 'completed'} onClick={(e) => { e.stopPropagation(); handleAssetRefresh(asset); }} className="flex-1 py-1.5 bg-white border-2 border-black brutalist-shadow-sm flex items-center justify-center gap-1 hover:bg-brand-yellow hover:translate-y-0.5 hover:shadow-none transition-all text-xs font-bold uppercase disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
@@ -1142,7 +1173,7 @@ const App = () => {
                 {
                   category: '图片模型',
                   items: [
-                    { m: 'Nano Banana', p: '0.06元/张' },
+                    { m: 'NANO BANANA', p: '0.06元/张' },
                     { m: 'Nano Banana Pro', p: '0.22元-0.40元/张' },
                     { m: 'gpt-image-1', p: '0.06元/张' },
                     { m: 'gpt-image-1.5', p: '0.06元/张' },
@@ -1227,7 +1258,16 @@ const App = () => {
             <div className="p-6 md:p-8 bg-white flex flex-col md:flex-row justify-between items-start md:items-end gap-6 flex-shrink-0">
               <div className="flex-1 overflow-hidden">
                 <p className="text-xs font-bold text-slate-400 uppercase mb-1 tracking-widest">PROMPT:</p>
-                <p className="text-lg md:text-2xl font-bold leading-tight line-clamp-2">"{previewAsset.prompt}"</p>
+                <div className="relative group/preview-prompt">
+                  <p className="text-lg md:text-2xl font-bold leading-tight line-clamp-2" title={previewAsset.prompt}>"{previewAsset.prompt}"</p>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleCopyPrompt(previewAsset.prompt, 'preview'); }}
+                    className="absolute -top-1 -right-1 opacity-0 group-hover/preview-prompt:opacity-100 p-1.5 bg-brand-yellow border-2 border-black brutalist-shadow-sm transition-all"
+                    title="复制完整提示词"
+                  >
+                    {copiedId === 'preview' ? <ClipboardCheck className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
                 <p className="text-xs md:text-sm font-bold text-brand-red uppercase mt-2">{previewAsset.modelName} | {previewAsset.genTimeLabel}</p>
               </div>
               <div className="flex gap-4 w-full md:w-auto">
