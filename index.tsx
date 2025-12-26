@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { 
@@ -20,7 +19,7 @@ declare var process: {
   }
 };
 
-type ModalType = 'settings' | 'links' | 'usage' | 'price' | 'support' | null;
+type ModalType = 'settings' | 'links' | 'usage' | 'price' | 'support' | 'announcement' | null;
 
 interface AppConfig {
   baseUrl: string;
@@ -351,7 +350,7 @@ const App = () => {
   const [selectedVideoModel, setSelectedVideoModel] = useState(VIDEO_MODELS[0].id);
   const [videoOptionIdx, setVideoOptionIdx] = useState(0);
   const [videoRatio, setVideoRatio] = useState('9:16');
-  const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [activeModal, setActiveModal] = useState<ModalType>('announcement');
   const [previewAsset, setPreviewAsset] = useState<GeneratedAsset | null>(null);
   const [previewRefImage, setPreviewRefImage] = useState<ReferenceImage | null>(null);
   const [config, setConfig] = useState<AppConfig>({ baseUrl: FIXED_BASE_URL, apiKey: '' });
@@ -1159,6 +1158,41 @@ const App = () => {
                height: Math.abs(selectionCurrent.y - selectionStart.y) 
              }} 
         />
+      )}
+
+      {activeModal === 'announcement' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-[550px] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative">
+            <ModalHeader title="最新公告 / ANNOUNCEMENT" icon={Megaphone} onClose={() => setActiveModal(null)} />
+            <div className="p-8 space-y-6">
+              <div className="space-y-4">
+                 <div className="bg-[#eff6ff] border-2 border-black p-4 brutalist-shadow-sm transition-transform hover:-translate-y-1">
+                    <h3 className="font-bold text-lg mb-2 italic uppercase flex items-center gap-2">
+                        <span className="bg-brand-blue text-white px-2 py-0.5 text-xs border border-black">OPTIMIZER</span>
+                        AI 优化升级
+                    </h3>
+                    <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
+                        1、AI优化调用速度更快，性能更强，价格更低的 <span className="text-black bg-brand-yellow px-1 border border-black">gemini-3-flash-preview</span>
+                    </p>
+                 </div>
+                 
+                 <div className="bg-[#fdf2f8] border-2 border-black p-4 brutalist-shadow-sm transition-transform hover:-translate-y-1">
+                    <h3 className="font-bold text-lg mb-2 italic uppercase flex items-center gap-2">
+                        <span className="bg-brand-red text-white px-2 py-0.5 text-xs border border-black">NEW MODEL</span>
+                        视频模型上新
+                    </h3>
+                    <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
+                        2、新增视频生成模型 <span className="text-black bg-brand-yellow px-1 border border-black">grok-video-3</span>，优点：生成速度快。
+                    </p>
+                 </div>
+              </div>
+              
+              <button onClick={() => setActiveModal(null)} className="w-full py-4 bg-black text-white border-4 border-white outline outline-2 outline-black font-bold text-xl brutalist-shadow hover:translate-y-1 hover:shadow-none transition-all uppercase tracking-tighter italic">
+                我知道了 / I GOT IT
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeModal === 'settings' && (
