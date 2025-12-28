@@ -1327,23 +1327,13 @@ const App = () => {
               </div>
 
               <div className="space-y-4">
-                 <div className="bg-[#eff6ff] border-2 border-black p-4 brutalist-shadow-sm transition-transform hover:-translate-y-1">
-                    <h3 className="font-bold text-lg mb-2 italic uppercase flex items-center gap-2">
-                        <span className="bg-brand-blue text-white px-2 py-0.5 text-xs border border-black">OPTIMIZER</span>
-                        AI 优化升级
-                    </h3>
-                    <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
-                        1、AI优化调用速度更快，性能更强，价格更低的 <span className="text-black bg-brand-yellow px-1 border border-black">gemini-3-flash-preview</span>
-                    </p>
-                 </div>
-                 
                  <div className="bg-[#fdf2f8] border-2 border-black p-4 brutalist-shadow-sm transition-transform hover:-translate-y-1">
                     <h3 className="font-bold text-lg mb-2 italic uppercase flex items-center gap-2">
                         <span className="bg-brand-red text-white px-2 py-0.5 text-xs border border-black">NEW MODEL</span>
                         视频模型上新
                     </h3>
                     <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
-                        2、新增视频生成模型 <span className="text-black bg-brand-yellow px-1 border border-black">grok-video-3</span>，优点：生成速度快。
+                        1、新增视频生成模型 <span className="text-black bg-brand-yellow px-1 border border-black">grok-video-3</span>，优点：生成速度快。
                     </p>
                  </div>
 
@@ -1353,7 +1343,7 @@ const App = () => {
                         图片模型上新
                     </h3>
                     <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
-                        3、新增最新图片创作模型 <span className="text-black bg-brand-yellow px-1 border border-black">kling image o1</span>，支持1K，2K。
+                        2、新增最新图片创作模型 <span className="text-black bg-brand-yellow px-1 border border-black">kling image o1</span>，支持1K，2K。
                     </p>
                  </div>
               </div>
