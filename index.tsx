@@ -1120,7 +1120,7 @@ const App = () => {
          onMouseMove={handleContainerMouseMove} 
          onMouseUp={handleContainerMouseUp}>
       
-      <div className="w-full md:w-[420px] bg-white border-r-4 border-black flex flex-col z-20 brutalist-shadow">
+      <div className="w-full md:w-[500px] bg-white border-r-4 border-black flex flex-col z-20 brutalist-shadow">
         <header className="bg-brand-yellow px-5 border-b-4 border-black h-20 flex items-center justify-between transition-colors duration-300">
           <div className="flex items-center gap-2.5">
             <div className="w-10 h-10 bg-brand-red flex items-center justify-center brutalist-border transition-colors duration-300">
