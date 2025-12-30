@@ -4,11 +4,12 @@ import {
   Settings2, Sparkles, Video, 
   Loader2, Download,
   Bot, X, AlertCircle, Plus,
-  RefreshCw, Edit, Maximize2, Headset, Check,
+  RefreshCw, Edit, Maximize2, Check,
   Square, CheckSquare, Link as LinkIcon, Megaphone, ExternalLink, Lock,
   History, Copy, ClipboardCheck, Trash2,
   AlertTriangle, Palette, Bookmark, Wand2, GripVertical, Save,
-  Image as ImageIcon, Film
+  Image as ImageIcon, Film, Folder, Tag, LayoutGrid, Pencil, ChevronDown,
+  BookOpen, Headset
 } from 'lucide-react';
 
 // --- Types & Declarations ---
@@ -20,7 +21,7 @@ declare var process: {
   }
 };
 
-type ModalType = 'settings' | 'links' | 'usage' | 'price' | 'support' | 'announcement' | 'edit-prompt' | 'styles' | 'library' | null;
+type ModalType = 'settings' | 'links' | 'usage' | 'price' | 'support' | 'announcement' | 'edit-prompt' | 'styles' | 'library' | 'save-prompt-confirm' | null;
 
 interface AppConfig {
   baseUrl: string;
@@ -61,6 +62,8 @@ interface ModelDefinition {
 interface SavedPrompt {
   id: string;
   text: string;
+  name: string;
+  category: string;
 }
 
 // --- Constants ---
@@ -195,7 +198,7 @@ const VIDEO_MODELS = [
   {
     id: 'jimeng-video-3.0',
     name: 'Jimeng Video 3.0',
-    desc: '即梦视频',
+    desc: '即梦视频', 
     supportedAspectRatios: JIMENG_RATIOS,
     options: [
       {s: '5', q: '标清'},
@@ -389,7 +392,7 @@ const CircularButton = ({ children, onClick, className = "" }: CircularButtonPro
 );
 
 const ModalHeader = ({ title, icon: Icon, onClose, bgColor = "bg-brand-yellow" }: { title: string, icon: any, onClose: () => void, bgColor?: string }) => (
-  <div className={`${bgColor} p-4 border-b-4 border-black flex justify-between items-center relative`}>
+  <div className={`${bgColor} p-4 border-b-4 border-black flex justify-between items-center relative flex-shrink-0`}>
     <div className="flex items-center gap-3">
       {Icon && typeof Icon === 'string' ? <span className="text-xl font-bold">{Icon}</span> : Icon && <Icon className="w-8 h-8" />}
       <h2 className="text-3xl font-bold italic tracking-tighter uppercase">{title}</h2>
@@ -414,6 +417,7 @@ const App = () => {
   const [tempConfig, setTempConfig] = useState<AppConfig>(config);
   const [prompt, setPrompt] = useState('');
   const [libraryPrompts, setLibraryPrompts] = useState<SavedPrompt[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [imageSize, setImageSize] = useState('AUTO');
   const [aspectRatio, setAspectRatio] = useState('1:1');
@@ -428,8 +432,26 @@ const App = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [draggedPromptIdx, setDraggedPromptIdx] = useState<number | null>(null);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  
+  // Library State
   const [editingLibraryId, setEditingLibraryId] = useState<string | null>(null);
   const [editingLibraryText, setEditingLibraryText] = useState('');
+  const [editingLibraryName, setEditingLibraryName] = useState('');
+  const [editingLibraryCategory, setEditingLibraryCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('全部');
+  
+  // Library Category Rename State
+  const [renamingCat, setRenamingCat] = useState<string | null>(null);
+  const [renameInput, setRenameInput] = useState('');
+
+  // Library Add Category State
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Save Modal State
+  const [saveName, setSaveName] = useState('');
+  const [saveCategory, setSaveCategory] = useState('');
+  const [showSaveCategoryDropdown, setShowSaveCategoryDropdown] = useState(false);
 
   const galleryRef = useRef<HTMLDivElement>(null);
   const configRef = useRef(config);
@@ -494,9 +516,33 @@ const App = () => {
 
     // Load library prompts
     const savedLibrary = localStorage.getItem('viva_library_prompts');
+    const savedCategories = localStorage.getItem('viva_library_categories');
+    
+    let loadedPrompts: SavedPrompt[] = [];
+    let loadedCategories: string[] = [];
+
     if (savedLibrary) {
-        try { setLibraryPrompts(JSON.parse(savedLibrary)); } catch (e) { setLibraryPrompts([]); }
+        try { 
+            const parsed = JSON.parse(savedLibrary);
+            loadedPrompts = parsed.map((p: any) => ({
+                id: p.id,
+                text: p.text,
+                name: p.name || (p.text.length > 8 ? p.text.slice(0, 8) + '...' : '未命名'),
+                category: p.category || '默认'
+            }));
+        } catch (e) { loadedPrompts = []; }
     }
+
+    if (savedCategories) {
+        try { loadedCategories = JSON.parse(savedCategories); } catch (e) {}
+    }
+
+    // Merge categories to ensure consistency
+    const promptCats = new Set(loadedPrompts.map(p => p.category));
+    const mergedCats = Array.from(new Set([...loadedCategories, ...promptCats])).sort();
+    
+    setLibraryPrompts(loadedPrompts);
+    setCategories(mergedCats);
   }, []);
 
   // Initialization: Load config from local storage
@@ -682,14 +728,43 @@ const App = () => {
     setActiveModal(null);
   };
 
-  const savePromptToLibrary = () => {
+  // --- Save Prompt Logic ---
+  const handleOpenSaveModal = () => {
     if (!prompt.trim()) return;
-    const newPrompt = { id: generateUUID(), text: prompt.trim() };
+    setSaveName(prompt.slice(0, 8)); // Default name
+    setSaveCategory('默认');
+    setShowSaveCategoryDropdown(false);
+    setActiveModal('save-prompt-confirm');
+  };
+
+  const confirmSavePrompt = () => {
+    const cat = saveCategory.trim() || '默认';
+    const newPrompt: SavedPrompt = { 
+        id: generateUUID(), 
+        text: prompt.trim(), 
+        name: saveName.trim() || '未命名', 
+        category: cat
+    };
+    
+    // Update prompts
     const updated = [newPrompt, ...libraryPrompts];
     setLibraryPrompts(updated);
     localStorage.setItem('viva_library_prompts', JSON.stringify(updated));
+
+    // Update categories
+    if (!categories.includes(cat)) {
+        const newCats = [...categories, cat].sort();
+        setCategories(newCats);
+        localStorage.setItem('viva_library_categories', JSON.stringify(newCats));
+    }
+
+    // Set selected category so next time user opens library it defaults to this (or they can find it easily)
+    setSelectedCategory(cat);
+
+    // Return to main app instead of opening library
+    setActiveModal(null);
     setShowSaveSuccess(true);
-    setTimeout(() => setShowSaveSuccess(false), 2000);
+    setTimeout(() => setShowSaveSuccess(false), 3000);
     setError(null);
   };
 
@@ -701,7 +776,7 @@ const App = () => {
   };
 
   const usePromptFromLibrary = (text: string) => {
-    if (editingLibraryId) return; // Don't use prompt if currently editing
+    if (editingLibraryId) return; 
     setPrompt(text);
     setActiveModal(null);
   };
@@ -710,30 +785,144 @@ const App = () => {
     e.stopPropagation();
     setEditingLibraryId(p.id);
     setEditingLibraryText(p.text);
+    setEditingLibraryName(p.name);
+    setEditingLibraryCategory(p.category);
   };
 
   const handleSaveLibraryEdit = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const updated = libraryPrompts.map(p => p.id === id ? { ...p, text: editingLibraryText } : p);
+    
+    // Find original prompt to check for category changes
+    const originalPrompt = libraryPrompts.find(p => p.id === id);
+    const oldCategory = originalPrompt?.category;
+
+    const updated = libraryPrompts.map(p => p.id === id ? { ...p, text: editingLibraryText, name: editingLibraryName, category: editingLibraryCategory } : p);
     setLibraryPrompts(updated);
     localStorage.setItem('viva_library_prompts', JSON.stringify(updated));
     setEditingLibraryId(null);
+    
+    // Manage Categories logic
+    let newCats = [...categories];
+    let changed = false;
+
+    // 1. Add new category if it doesn't exist
+    if (editingLibraryCategory && !newCats.includes(editingLibraryCategory)) {
+        newCats.push(editingLibraryCategory);
+        newCats.sort();
+        changed = true;
+    }
+
+    // 2. Remove old category if it's now empty
+    if (oldCategory && oldCategory !== editingLibraryCategory) {
+        // Check if any prompt in the UPDATED list still uses the old category
+        const isStillUsed = updated.some(p => p.category === oldCategory);
+        if (!isStillUsed) {
+            newCats = newCats.filter(c => c !== oldCategory);
+            changed = true;
+            // If the user is currently filtering by the deleted category, reset filter
+            if (selectedCategory === oldCategory) {
+                setSelectedCategory('全部');
+            }
+        }
+    }
+
+    if (changed) {
+        setCategories(newCats);
+        localStorage.setItem('viva_library_categories', JSON.stringify(newCats));
+    }
   };
 
   const handleCancelLibraryEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingLibraryId(null);
   };
+  
+  // --- Category Management ---
+  const handleStartAddCategory = () => {
+      setIsAddingCategory(true);
+      setNewCategoryName('');
+  };
+  
+  const handleSaveNewCategory = () => {
+    if (!newCategoryName.trim()) {
+        setIsAddingCategory(false);
+        return;
+    }
+    const clean = newCategoryName.trim();
+    if (categories.includes(clean)) {
+        alert("该分类已存在 / Category already exists");
+        return;
+    }
+    const newCats = [...categories, clean].sort();
+    setCategories(newCats);
+    localStorage.setItem('viva_library_categories', JSON.stringify(newCats));
+    setSelectedCategory(clean);
+    setIsAddingCategory(false);
+    setNewCategoryName('');
+  };
+
+  const handleStartRenameCat = (cat: string) => {
+    setRenamingCat(cat);
+    setRenameInput(cat);
+  };
+
+  const handleFinishRenameCat = () => {
+    if (!renamingCat) return;
+    const oldName = renamingCat;
+    const newName = renameInput.trim();
+    
+    if (!newName || newName === oldName) {
+        setRenamingCat(null);
+        return;
+    }
+
+    if (categories.includes(newName)) {
+        alert("该分类已存在 / Category already exists");
+        return; 
+    }
+
+    // Update prompts
+    const newPrompts = libraryPrompts.map(p => p.category === oldName ? {...p, category: newName} : p);
+    setLibraryPrompts(newPrompts);
+    localStorage.setItem('viva_library_prompts', JSON.stringify(newPrompts));
+
+    // Update categories
+    const newCats = categories.map(c => c === oldName ? newName : c).sort();
+    setCategories(newCats);
+    localStorage.setItem('viva_library_categories', JSON.stringify(newCats));
+    
+    if (selectedCategory === oldName) setSelectedCategory(newName);
+    setRenamingCat(null);
+  };
+  
+  const handleDeleteCategory = (catName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const count = libraryPrompts.filter(p => p.category === catName).length;
+    if (count > 0) {
+        if (!window.confirm(`分类 "${catName}" 下有 ${count} 条提示词，确认删除吗？提示词也将被删除。\nDelete category "${catName}" and its ${count} prompts?`)) {
+            return;
+        }
+        // Delete prompts
+        const newPrompts = libraryPrompts.filter(p => p.category !== catName);
+        setLibraryPrompts(newPrompts);
+        localStorage.setItem('viva_library_prompts', JSON.stringify(newPrompts));
+    }
+    
+    const newCats = categories.filter(c => c !== catName);
+    setCategories(newCats);
+    localStorage.setItem('viva_library_categories', JSON.stringify(newCats));
+    if (selectedCategory === catName) setSelectedCategory('全部');
+  };
 
   // --- Drag & Drop Sorting Handlers ---
   const handleDragStart = (idx: number) => {
-    if (editingLibraryId) return;
+    if (editingLibraryId || selectedCategory !== '全部') return; // Disable drag if filtered or editing
     setDraggedPromptIdx(idx);
   };
 
   const handleDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
-    if (editingLibraryId) return;
+    if (editingLibraryId || selectedCategory !== '全部') return;
     if (draggedPromptIdx === null || draggedPromptIdx === idx) return;
     
     const items = [...libraryPrompts];
@@ -1257,7 +1446,7 @@ const App = () => {
                   <button onClick={() => setActiveModal('library')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#A855F7] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
                     <Bookmark className="w-3.5 h-3.5"/> 库
                   </button>
-                  <button onClick={savePromptToLibrary} disabled={!prompt.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F472B6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
+                  <button onClick={handleOpenSaveModal} disabled={!prompt.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F472B6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
                     <Save className="w-3.5 h-3.5"/> 保存
                   </button>
                   <button onClick={() => setActiveModal('styles')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3B82F6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
@@ -1319,10 +1508,9 @@ const App = () => {
             >
               <Settings2 className="w-6 h-6"/>
             </CircularButton>
-            <CircularButton onClick={() => setActiveModal('support')} className="bg-brand-blue"><Headset className="w-6 h-6 text-white"/></CircularButton>
             <CircularButton onClick={() => setActiveModal('price')} className="bg-brand-green"><span className="text-2xl font-normal text-white">¥</span></CircularButton>
-            <CircularButton onClick={() => setActiveModal('usage')} className="bg-white"><Megaphone className="w-6 h-6"/></CircularButton>
-            <CircularButton onClick={() => setActiveModal('links')} className="bg-white"><LinkIcon className="w-6 h-6"/></CircularButton>
+            <CircularButton onClick={() => setActiveModal('usage')} className="bg-white"><BookOpen className="w-6 h-6"/></CircularButton>
+            <CircularButton onClick={() => setActiveModal('links')} className="bg-white"><Headset className="w-6 h-6"/></CircularButton>
           </div>
           
           <div className="flex items-center gap-4">
@@ -1535,28 +1723,47 @@ const App = () => {
 
       {activeModal === 'links' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[550px] bg-brand-cream border-4 border-black brutalist-shadow animate-in zoom-in-95 relative">
-            <ModalHeader title="FRIENDLY LINKS (友情链接)" icon={LinkIcon} onClose={() => setActiveModal(null)} />
+          <div className="w-[500px] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative">
+            <ModalHeader title="联系客服 / CONTACT SUPPORT" icon={Headset} onClose={() => setActiveModal(null)} />
             <div className="p-8 space-y-6">
-              <a href="https://www.vivaapi.cn" target="_blank" className="block bg-white border-2 border-black p-5 brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl">💻</span>
-                  <span className="font-bold text-xl italic uppercase">API主站（用于创建令牌，查看消耗情况等）</span>
-                </div>
-                <div className="text-blue-500 font-bold ml-10 text-xl underline italic">www.vivaapi.cn</div>
-              </a>
-              
-              <a href="https://m.vivaapi.cn" target="_blank" className="block bg-[#fff1f2] border-2 border-black p-5 brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl text-brand-red">🖼️</span>
-                  <span className="font-bold text-xl italic uppercase">AI分镜大师</span>
-                </div>
-                <div className="text-brand-red font-bold ml-10 text-xl underline italic">https://m.vivaapi.cn</div>
-              </a>
+               {/* WeChat Card */}
+               <div className="bg-brand-cream border-4 border-black p-6 flex flex-col items-center gap-4 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
+                  <div className="absolute top-0 right-0 bg-brand-yellow px-3 py-1 border-l-2 border-b-2 border-black font-bold text-[10px] uppercase">Online</div>
+                  <div className="w-16 h-16 bg-brand-blue text-white border-2 border-black rounded-full flex items-center justify-center brutalist-shadow-sm mb-2">
+                      <Headset className="w-8 h-8" />
+                  </div>
+                  <div className="text-center space-y-2 w-full">
+                      <h3 className="font-bold text-sm uppercase italic text-slate-500 tracking-widest">WeChat Support</h3>
+                      <div className="flex w-full items-stretch">
+                          <div className="bg-brand-green text-black px-4 flex items-center justify-center border-2 border-black border-r-0 font-black text-xl whitespace-nowrap tracking-tighter">
+                            微信客服
+                          </div>
+                          <div className="bg-white border-2 border-black px-4 py-3 text-2xl font-black uppercase tracking-wider select-all cursor-text hover:bg-slate-50 transition-colors flex-1 text-center">
+                              viva-api
+                          </div>
+                      </div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase italic">Click text to copy / Long press</p>
+                  </div>
+               </div>
 
-              <div className="border-2 border-black border-dashed p-4 text-center text-lg font-bold text-slate-500 uppercase italic">
-                “ 此分站可使用相同的API令牌使用 ”
-              </div>
+               <div className="w-full h-0.5 bg-slate-100 border-t-2 border-dashed border-slate-300"></div>
+
+               {/* Recruitment & Docs */}
+               <div className="space-y-4 text-center">
+                  <div className="space-y-1">
+                      <h4 className="font-bold text-lg uppercase italic flex items-center justify-center gap-2">
+                          <span className="w-2 h-2 bg-brand-green rounded-full border border-black"></span>
+                          招募优质API代理
+                      </h4>
+                      <p className="text-xs font-bold text-slate-500 italic px-4 leading-relaxed">
+                          名额有限，待遇从优。欢迎拥有稳定客户资源的伙伴加入。
+                      </p>
+                  </div>
+
+                  <a href="https://ai.feishu.cn/wiki/O6Q9wrxxci898Wkj6ndcFnlknJd?from=from_copylink" target="_blank" className="flex items-center justify-center w-full py-4 bg-brand-red text-white border-4 border-transparent outline outline-2 outline-black font-bold text-lg uppercase hover:bg-black hover:translate-y-1 hover:shadow-none brutalist-shadow transition-all italic gap-2 group">
+                      查看更多详情 <ExternalLink className="w-5 h-5 group-hover:scale-110 transition-transform"/>
+                  </a>
+               </div>
             </div>
           </div>
         </div>
@@ -1565,10 +1772,13 @@ const App = () => {
       {activeModal === 'usage' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-[500px] bg-brand-cream border-4 border-black brutalist-shadow animate-in zoom-in-95 relative">
-            <ModalHeader title="Usage Flow (使用流程)" icon={Megaphone} onClose={() => setActiveModal(null)} />
+            <ModalHeader title="Usage Flow (使用流程)" icon={BookOpen} onClose={() => setActiveModal(null)} />
             <div className="p-8 space-y-6">
               {[
-                { n: '1', t: '注册与令牌', d: <>前往主站 <a href="https://www.vivaapi.cn" target="_blank" className="text-blue-600 font-bold underline italic">www.vivaapi.cn</a> 注册并创建您的专属令牌。</> },
+                { n: '1', t: '注册与令牌', d: <>
+                  前往主站 <a href="https://www.vivaapi.cn" target="_blank" className="text-blue-600 font-bold underline italic">www.vivaapi.cn</a> 注册并创建您的专属令牌。
+                  <div className="mt-2 text-brand-red font-bold text-sm">API令牌分组：限时特价→企业级→default→优质gemini→逆向</div>
+                </> },
                 { n: '2', t: '配置使用', d: '点击本站上方设置 按钮，输入令牌即可开始创作。' },
                 { n: '3', t: '查询日志', d: '使用记录及额度消耗情况请在主站后台查询。' }
               ].map(step => (
@@ -1631,23 +1841,6 @@ const App = () => {
                   ))}
                 </div>
               ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeModal === 'support' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-white border-4 border-black p-12 brutalist-shadow animate-in zoom-in-95 relative group">
-            <button onClick={() => setActiveModal(null)} 
-                    className="absolute -top-4 -right-4 bg-brand-red text-white p-2 border-4 border-black brutalist-shadow-sm hover:translate-y-1 hover:shadow-none transition-all z-[80]">
-              <X className="text-white w-7 h-7"/>
-            </button>
-            <div className="flex flex-col items-center gap-8">
-              <div className="w-72 h-72 border-4 border-black brutalist-shadow-sm flex items-center justify-center bg-white p-3 relative overflow-visible">
-                 <img src="https://lsky.zhongzhuan.chat/i/2025/12/21/69477f7dc66ea.png" alt="Support QR" className="w-full h-full grayscale" />
-              </div>
-              <p className="font-bold text-xl tracking-tight uppercase italic">加微信领试用额度，招代理</p>
             </div>
           </div>
         </div>
@@ -1718,76 +1911,244 @@ const App = () => {
         </div>
       )}
 
+      {activeModal === 'save-prompt-confirm' && (
+         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+           <div className="w-[500px] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
+             <ModalHeader title="保存提示词 / SAVE PROMPT" icon={Save} onClose={() => setActiveModal(null)} bgColor="bg-brand-green" />
+             <div className="p-8 space-y-4">
+               <div className="space-y-1">
+                 <label className="text-sm font-bold uppercase">提示词名称 / NAME</label>
+                 <input 
+                   type="text" 
+                   value={saveName} 
+                   onChange={(e) => setSaveName(e.target.value)} 
+                   className="w-full p-3 border-2 border-black font-normal bg-slate-50 focus:bg-white focus:outline-none brutalist-input"
+                   placeholder="为您的提示词起个名字"
+                 />
+               </div>
+               <div className="space-y-1">
+                 <label className="text-sm font-bold uppercase">分类 / CATEGORY</label>
+                 <div className="relative">
+                    <input 
+                        type="text" 
+                        value={saveCategory} 
+                        onChange={(e) => setSaveCategory(e.target.value)} 
+                        className="w-full p-3 pr-10 border-2 border-black font-normal bg-slate-50 focus:bg-white focus:outline-none brutalist-input"
+                        placeholder="输入新分类或选择现有"
+                    />
+                    <button 
+                        onClick={() => setShowSaveCategoryDropdown(!showSaveCategoryDropdown)}
+                        className="absolute right-0 top-0 bottom-0 px-3 flex items-center justify-center hover:bg-slate-200 transition-colors border-l-2 border-black"
+                    >
+                        <ChevronDown className="w-4 h-4" />
+                    </button>
+                    
+                    {showSaveCategoryDropdown && (
+                        <div className="absolute top-full left-0 right-0 bg-white border-2 border-black border-t-0 max-h-40 overflow-y-auto z-50 brutalist-shadow-sm">
+                            {categories.map(c => (
+                                <div 
+                                    key={c}
+                                    onClick={() => { setSaveCategory(c); setShowSaveCategoryDropdown(false); }}
+                                    className="p-2 hover:bg-brand-yellow cursor-pointer text-sm font-bold border-b border-slate-100 last:border-0"
+                                >
+                                    {c}
+                                </div>
+                            ))}
+                            {categories.length === 0 && <div className="p-2 text-xs text-slate-500 italic">暂无分类</div>}
+                        </div>
+                    )}
+                 </div>
+               </div>
+               <div className="p-4 bg-brand-cream border-2 border-black border-dashed mt-4 max-h-[150px] overflow-y-auto">
+                 <p className="text-xs text-slate-500 italic mb-1">PREVIEW:</p>
+                 <p className="text-sm italic text-slate-800 line-clamp-4">{prompt}</p>
+               </div>
+               <div className="flex gap-4 pt-4">
+                 <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-white border-2 border-black font-bold uppercase hover:bg-slate-100 transition-colors brutalist-shadow-sm">取消</button>
+                 <button onClick={confirmSavePrompt} disabled={!saveName.trim()} className="flex-1 py-3 bg-brand-green border-2 border-black font-bold uppercase hover:translate-y-0.5 hover:shadow-none transition-all brutalist-shadow-sm disabled:opacity-50">确认保存</button>
+               </div>
+             </div>
+           </div>
+         </div>
+      )}
+
       {activeModal === 'library' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[800px] max-w-full h-[80vh] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
+          <div className="w-[1000px] max-w-full h-[85vh] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
             <ModalHeader title="提示词库 / PROMPT LIBRARY" icon={Bookmark} onClose={() => setActiveModal(null)} bgColor="bg-brand-purple" />
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar bg-slate-50">
-                {libraryPrompts.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
-                        <Bookmark className="w-20 h-20 opacity-20"/>
-                        <p className="font-bold text-2xl uppercase italic tracking-tighter">Your library is empty</p>
+            <div className="flex-1 flex overflow-hidden">
+                {/* Sidebar */}
+                <div className="w-1/4 min-w-[200px] border-r-4 border-black bg-brand-cream overflow-y-auto p-4 space-y-2">
+                    <div className="flex justify-between items-center mb-2 pl-1">
+                        <div className="text-xs font-bold text-slate-500 uppercase">CATEGORIES</div>
+                        <button onClick={handleStartAddCategory} className="p-1 hover:bg-white border border-transparent hover:border-black rounded transition-all" title="Add Category">
+                             <Plus className="w-4 h-4 text-black"/>
+                        </button>
                     </div>
-                ) : (
-                    libraryPrompts.map((p, idx) => (
-                        <div 
-                            key={p.id}
-                            draggable={!editingLibraryId}
-                            onDragStart={() => handleDragStart(idx)}
-                            onDragOver={(e) => handleDragOver(e, idx)}
-                            onDragEnd={handleDragEnd}
-                            onClick={() => usePromptFromLibrary(p.text)}
-                            className={`group relative bg-white border-2 border-black p-4 brutalist-shadow-sm hover:bg-brand-cream cursor-pointer transition-all flex items-start gap-4 ${draggedPromptIdx === idx ? 'opacity-40 border-dashed border-brand-purple scale-95' : 'translate-y-0'} ${editingLibraryId === p.id ? 'ring-2 ring-brand-purple bg-brand-cream' : ''}`}
-                        >
-                            {!editingLibraryId && (
-                              <div className="mt-1 text-slate-400 group-hover:text-brand-purple cursor-grab active:cursor-grabbing" title="拖动排序">
-                                  <GripVertical className="w-5 h-5"/>
-                              </div>
-                            )}
-                            <div className="flex-1">
-                                {editingLibraryId === p.id ? (
-                                  <div className="space-y-3" onClick={e => e.stopPropagation()}>
-                                    <textarea 
-                                      value={editingLibraryText} 
-                                      onChange={(e) => setEditingLibraryText(e.target.value)} 
-                                      className="w-full p-3 border-2 border-black font-normal text-xl bg-white focus:outline-none brutalist-input leading-relaxed italic min-h-[120px]"
-                                      autoFocus
-                                    />
-                                    <div className="flex gap-2 justify-end">
-                                      <button onClick={(e) => handleCancelLibraryEdit(e)} className="px-3 py-1 bg-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase italic">取消</button>
-                                      <button onClick={(e) => handleSaveLibraryEdit(p.id, e)} className="px-3 py-1 bg-brand-green border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase italic">保存</button>
+
+                    {/* New Category Input */}
+                    {isAddingCategory && (
+                        <div className="mb-3 relative animate-in slide-in-from-top-2 fade-in duration-200">
+                             <input 
+                                autoFocus
+                                value={newCategoryName}
+                                onChange={(e) => setNewCategoryName(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveNewCategory();
+                                    if (e.key === 'Escape') setIsAddingCategory(false);
+                                }}
+                                className="w-full px-3 py-2 border-2 border-black font-bold text-sm bg-white focus:outline-none brutalist-shadow-sm pr-16"
+                                placeholder="New Category"
+                             />
+                             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
+                                <button onClick={handleSaveNewCategory} className="p-1 hover:bg-green-100 text-green-600 rounded"><Check className="w-4 h-4"/></button>
+                                <button onClick={() => setIsAddingCategory(false)} className="p-1 hover:bg-red-100 text-red-600 rounded"><X className="w-4 h-4"/></button>
+                             </div>
+                        </div>
+                    )}
+                    
+                    <button 
+                        onClick={() => setSelectedCategory('全部')}
+                        className={`w-full text-left px-4 py-3 border-2 border-black font-bold text-sm uppercase transition-all flex items-center justify-between ${selectedCategory === '全部' ? 'bg-brand-purple text-white brutalist-shadow' : 'bg-white hover:bg-purple-100 brutalist-shadow-sm'}`}
+                    >
+                        <div className="flex items-center gap-2"><LayoutGrid className="w-4 h-4"/> 全部</div>
+                        <span className="text-xs opacity-70">{libraryPrompts.length}</span>
+                    </button>
+                    {categories.map(cat => (
+                        <div key={cat} className="group/cat relative mt-3">
+                            {renamingCat === cat ? (
+                                <input 
+                                    autoFocus
+                                    value={renameInput}
+                                    onChange={(e) => setRenameInput(e.target.value)}
+                                    onBlur={handleFinishRenameCat}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleFinishRenameCat();
+                                        if (e.key === 'Escape') setRenamingCat(null);
+                                    }}
+                                    className="w-full px-4 py-3 border-2 border-black font-bold text-sm uppercase bg-white focus:outline-none"
+                                />
+                            ) : (
+                                <div 
+                                    onClick={() => setSelectedCategory(cat)}
+                                    className={`w-full text-left px-4 py-3 border-2 border-black font-bold text-sm uppercase transition-all flex items-center justify-between cursor-pointer select-none ${selectedCategory === cat ? 'bg-brand-purple text-white brutalist-shadow' : 'bg-white hover:bg-purple-100 brutalist-shadow-sm'}`}
+                                    title="双击重命名 / Double click to rename"
+                                    onDoubleClick={() => handleStartRenameCat(cat)}
+                                >
+                                    <div className="flex items-center gap-2 truncate overflow-hidden">
+                                       <Folder className="w-4 h-4 flex-shrink-0"/> 
+                                       <span className="truncate">{cat}</span>
                                     </div>
-                                  </div>
-                                ) : (
-                                  <p className="text-xl font-normal leading-relaxed italic">"{p.text}"</p>
-                                )}
-                            </div>
-                            {!editingLibraryId && (
-                              <div className="flex flex-col gap-2">
-                                <button 
-                                    onClick={(e) => removePromptFromLibrary(p.id, e)}
-                                    className="opacity-0 group-hover:opacity-100 p-2 bg-brand-red text-white border-2 border-black brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all"
-                                    title="从库中删除"
-                                >
-                                    <Trash2 className="w-4 h-4"/>
-                                </button>
-                                <button 
-                                    onClick={(e) => handleStartLibraryEdit(p, e)}
-                                    className="opacity-0 group-hover:opacity-100 p-2 bg-brand-yellow text-black border-2 border-black brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all"
-                                    title="直接编辑"
-                                >
-                                    <Edit className="w-4 h-4"/>
-                                </button>
-                              </div>
+                                    
+                                    {/* Delete Icon - Visible on hover */}
+                                    <div 
+                                        onClick={(e) => handleDeleteCategory(cat, e)}
+                                        className="opacity-0 group-hover/cat:opacity-100 p-1 hover:bg-brand-red hover:text-white rounded transition-all ml-2 flex-shrink-0"
+                                        title="删除分类"
+                                    >
+                                        <Trash2 className="w-4 h-4"/>
+                                    </div>
+                                </div>
                             )}
                         </div>
-                    ))
-                )}
+                    ))}
+                </div>
+
+                {/* Main Content */}
+                <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {libraryPrompts.filter(p => selectedCategory === '全部' || p.category === selectedCategory).length === 0 ? (
+                             <div className="col-span-full h-64 flex flex-col items-center justify-center text-slate-300 gap-4">
+                                <Bookmark className="w-16 h-16 opacity-20"/>
+                                <p className="font-bold text-xl uppercase italic tracking-tighter">No prompts found in this category</p>
+                            </div>
+                        ) : (
+                            libraryPrompts.filter(p => selectedCategory === '全部' || p.category === selectedCategory).map((p, idx) => (
+                                <div 
+                                    key={p.id}
+                                    draggable={!editingLibraryId && selectedCategory === '全部'}
+                                    onDragStart={() => handleDragStart(libraryPrompts.indexOf(p))}
+                                    onDragOver={(e) => handleDragOver(e, libraryPrompts.indexOf(p))}
+                                    onDragEnd={handleDragEnd}
+                                    onClick={() => usePromptFromLibrary(p.text)}
+                                    className={`group relative bg-white border-2 border-black p-4 brutalist-shadow-sm hover:translate-y-[-2px] hover:shadow-md cursor-pointer transition-all flex flex-col gap-2 ${draggedPromptIdx === libraryPrompts.indexOf(p) ? 'opacity-40 border-dashed border-brand-purple scale-95' : ''} ${editingLibraryId === p.id ? 'ring-2 ring-brand-purple bg-brand-cream z-10' : ''}`}
+                                >
+                                    {editingLibraryId === p.id ? (
+                                    <div className="space-y-3" onClick={e => e.stopPropagation()}>
+                                        <input 
+                                            type="text" 
+                                            value={editingLibraryName} 
+                                            onChange={(e) => setEditingLibraryName(e.target.value)}
+                                            className="w-full p-2 border-2 border-black font-bold text-sm bg-white focus:outline-none"
+                                            placeholder="Name"
+                                        />
+                                        <div className="flex gap-2 items-center">
+                                            <Tag className="w-4 h-4 text-slate-500"/>
+                                            <input 
+                                                type="text" 
+                                                value={editingLibraryCategory} 
+                                                onChange={(e) => setEditingLibraryCategory(e.target.value)}
+                                                className="flex-1 p-2 border-2 border-black font-normal text-xs bg-white focus:outline-none"
+                                                placeholder="Category"
+                                                list="edit-category-suggestions"
+                                            />
+                                            <datalist id="edit-category-suggestions">
+                                                {categories.map(c => (
+                                                    <option key={c} value={c} />
+                                                ))}
+                                            </datalist>
+                                        </div>
+                                        <textarea 
+                                        value={editingLibraryText} 
+                                        onChange={(e) => setEditingLibraryText(e.target.value)} 
+                                        className="w-full p-2 border-2 border-black font-normal text-sm bg-white focus:outline-none brutalist-input leading-relaxed italic min-h-[100px]"
+                                        placeholder="Prompt text"
+                                        />
+                                        <div className="flex gap-2 justify-end">
+                                        <button onClick={(e) => handleCancelLibraryEdit(e)} className="px-3 py-1 bg-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase italic">取消</button>
+                                        <button onClick={(e) => handleSaveLibraryEdit(p.id, e)} className="px-3 py-1 bg-brand-green border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase italic">保存</button>
+                                        </div>
+                                    </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex justify-between items-start">
+                                                <h4 className="font-bold text-base truncate pr-2" title={p.name}>{p.name}</h4>
+                                            </div>
+                                            <p className="text-sm font-normal text-slate-600 leading-tight italic line-clamp-3">"{p.text}"</p>
+                                            
+                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                                                 {!editingLibraryId && (
+                                                    <div className="text-slate-300 mr-2 cursor-grab active:cursor-grabbing self-center" title="拖动排序 (仅全部视图)">
+                                                        <GripVertical className="w-4 h-4"/>
+                                                    </div>
+                                                 )}
+                                                <button 
+                                                    onClick={(e) => handleStartLibraryEdit(p, e)}
+                                                    className="p-1.5 bg-brand-yellow text-black border border-black hover:bg-white transition-colors brutalist-shadow-sm"
+                                                    title="编辑"
+                                                >
+                                                    <Edit className="w-3 h-3"/>
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => removePromptFromLibrary(p.id, e)}
+                                                    className="p-1.5 bg-brand-red text-white border border-black hover:bg-red-600 transition-colors brutalist-shadow-sm"
+                                                    title="删除"
+                                                >
+                                                    <Trash2 className="w-3 h-3"/>
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
             <div className="p-4 bg-brand-cream border-t-4 border-black flex justify-between items-center">
-                <p className="text-xs font-bold text-slate-500 italic uppercase">点击条目直接使用 | 按住左键拖动条目可进行排序 | 点击编辑按钮直接编辑</p>
+                <p className="text-xs font-bold text-slate-500 italic uppercase">点击条目使用 | 在全部视图下拖动排序 | 右上角操作</p>
                 <button 
-                  onClick={() => { savePromptToLibrary(); setActiveModal(null); }} 
+                  onClick={() => { handleOpenSaveModal(); }} 
                   disabled={!prompt.trim()}
                   className="px-8 py-2.5 bg-black text-white border-2 border-black font-bold uppercase tracking-tighter italic text-sm brutalist-shadow-sm hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-30 disabled:grayscale"
                 >
