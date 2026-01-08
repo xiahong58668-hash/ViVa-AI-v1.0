@@ -2146,25 +2146,28 @@ const App = () => {
                   </div>
                   
                   {/* Updated Toolbar matching the provided image style */}
-                  <div className="flex flex-wrap gap-1.5 mb-2 bg-[#FFFDE7] p-1 border-2 border-black brutalist-shadow-sm">
-                    <button onClick={() => setPrompt('')} className="flex items-center justify-center px-2 py-1.5 bg-white text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:bg-brand-red hover:text-white hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap" title="清空提示词">
-                      <Trash2 className="w-3.5 h-3.5"/>
-                    </button>
-                    <button onClick={() => setActiveModal('library')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#A855F7] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
-                      <Bookmark className="w-3.5 h-3.5"/> 库
-                    </button>
-                    <button onClick={handleOpenSaveModal} disabled={!prompt.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F472B6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
-                      <Save className="w-3.5 h-3.5"/> 保存
-                    </button>
-                    <button onClick={() => setActiveModal('styles')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3B82F6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
-                      <Palette className="w-3.5 h-3.5"/> 风格
-                    </button>
-                    <button onClick={() => setActiveModal('edit-prompt')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4ADE80] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
-                      <Maximize2 className="w-3.5 h-3.5"/> 展开
-                    </button>
-                    <button onClick={optimizePrompt} disabled={isOptimizing} className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#F7CE00] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button onClick={optimizePrompt} disabled={isOptimizing} className="flex-[2] flex items-center justify-center gap-1.5 px-3 py-2 bg-[#F7CE00] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap min-w-[90px]">
                       {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <><Wand2 className="w-3.5 h-3.5"/> AI优化</>}
                     </button>
+                    <button onClick={() => setActiveModal('styles')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-[#3B82F6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap min-w-[70px]">
+                      <Palette className="w-3.5 h-3.5"/> 风格
+                    </button>
+                    <button onClick={() => setActiveModal('library')} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-[#A855F7] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap min-w-[70px]">
+                      <Bookmark className="w-3.5 h-3.5"/> 词库
+                    </button>
+                    
+                    <div className="flex gap-2 ml-auto">
+                      <button onClick={handleOpenSaveModal} disabled={!prompt.trim()} className="w-9 h-9 flex items-center justify-center bg-[#F472B6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm" title="保存">
+                        <Save className="w-4 h-4"/>
+                      </button>
+                      <button onClick={() => setActiveModal('edit-prompt')} className="w-9 h-9 flex items-center justify-center bg-[#4ADE80] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all" title="展开">
+                        <Maximize2 className="w-4 h-4"/>
+                      </button>
+                      <button onClick={() => setPrompt('')} className="w-9 h-9 flex items-center justify-center bg-white text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:bg-brand-red hover:text-white hover:translate-y-0.5 hover:shadow-none transition-all" title="清空">
+                        <Trash2 className="w-4 h-4"/>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="relative group">
