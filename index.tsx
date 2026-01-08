@@ -4,12 +4,13 @@ import {
   Settings2, Sparkles, Video, 
   Loader2, Download,
   Bot, X, AlertCircle, Plus,
-  RefreshCw, Edit, Maximize2, Check,
+  RefreshCw, Edit, Maximize2, Minimize2, Check,
   Square, CheckSquare, Megaphone, ExternalLink, Lock,
   History, Copy, ClipboardCheck, Trash2,
   AlertTriangle, Palette, Bookmark, Wand2, GripVertical, Save,
   Image as ImageIcon, Film, Folder, Tag, LayoutGrid, ChevronDown,
-  BookOpen, Headset, Shield
+  BookOpen, Headset, Shield,
+  Paperclip, Send, MessageSquare, FileText, Music, Mic
 } from 'lucide-react';
 
 // --- Types & Declarations ---
@@ -21,7 +22,7 @@ declare var process: {
   }
 };
 
-type ModalType = 'settings' | 'links' | 'usage' | 'price' | 'support' | 'announcement' | 'edit-prompt' | 'styles' | 'library' | 'save-prompt-confirm' | 'video-remix' | 'agent-login' | null;
+type ModalType = 'settings' | 'links' | 'usage' | 'price' | 'support' | 'announcement' | 'edit-prompt' | 'styles' | 'library' | 'save-prompt-confirm' | 'video-remix' | null;
 
 interface AppConfig {
   baseUrl: string;
@@ -69,7 +70,6 @@ interface SavedPrompt {
 // --- Constants ---
 
 const FIXED_BASE_URL = 'https://www.vivaapi.cn';
-const AGENT_USERS = ['b20610284@126.com', 'github_156012', 'viva-api'];
 
 const ASPECT_RATIO_LABELS: Record<string, string> = {
   '1:1': '1:1 (正方形)',
@@ -177,6 +177,17 @@ const VIDEO_MODELS = [
       {s: '15', q: '高清'}, 
       {s: '25', q: '标清'}
     ] 
+  },
+  {
+    id: 'kling-custom-elements',
+    name: 'Kling Motion Ctrl',
+    desc: '动作迁移',
+    supportedAspectRatios: ['16:9', '9:16', '1:1'],
+    options: [
+      {s: '5', q: '5s'},
+      {s: '10', q: '10s'},
+      {s: '30', q: '30s'}
+    ]
   },
   { 
     id: 'veo_3_1-fast', 
@@ -372,6 +383,339 @@ const deleteAssetFromDB = async (id: string) => {
   } catch(e) { console.error("DB Delete Error", e); }
 };
 
+// --- ChatBot Component ---
+
+interface ChatMessage {
+    role: 'user' | 'model';
+    text: string;
+    files?: { type: string; data: string }[];
+    error?: boolean;
+}
+
+const ChatBot = ({ config }: { config: AppConfig }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [position, setPosition] = useState({ x: -1, y: -1 }); // Initial -1 indicates default
+    const [messages, setMessages] = useState<ChatMessage[]>([{ role: 'model', text: '你好！我是VIVA智能助手。我可以帮你解答问题、分析文档或处理多媒体内容。\n支持: 文本, 图片, 音频, 视频, PDF。' }]);
+    const [input, setInput] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+    const [attachments, setAttachments] = useState<{ file: File, preview: string, type: string }[]>([]);
+    const [copiedId, setCopiedId] = useState<number | null>(null);
+    
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // Set initial position on mount to avoid SSR mismatch if any
+    useEffect(() => {
+        if (position.x === -1) {
+            setPosition({ x: window.innerWidth - 80, y: window.innerHeight - 80 });
+        }
+    }, []);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, isOpen]);
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const currentX = position.x;
+        const currentY = position.y;
+
+        let hasMoved = false;
+
+        const handleMouseMove = (ev: MouseEvent) => {
+            if (!hasMoved && (Math.abs(ev.clientX - startX) > 5 || Math.abs(ev.clientY - startY) > 5)) {
+                hasMoved = true;
+                setIsDragging(true);
+            }
+            if (hasMoved) {
+                setPosition({
+                    x: currentX + (ev.clientX - startX),
+                    y: currentY + (ev.clientY - startY)
+                });
+            }
+        };
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            setTimeout(() => setIsDragging(false), 50);
+        };
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files) return;
+        
+        Array.from(files).forEach((file: File) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const result = ev.target?.result as string;
+                let type = 'file';
+                if (file.type.startsWith('image/')) type = 'image';
+                else if (file.type.startsWith('audio/')) type = 'audio';
+                else if (file.type.startsWith('video/')) type = 'video';
+                else if (file.type === 'application/pdf') type = 'pdf';
+                
+                setAttachments(prev => [...prev, { file, preview: result, type }]);
+            };
+            reader.readAsDataURL(file);
+        });
+        e.target.value = ''; // Reset input
+    };
+
+    const removeAttachment = (idx: number) => {
+        setAttachments(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    const generateResponse = async (history: ChatMessage[]) => {
+        setIsLoading(true);
+        try {
+            const key = config.apiKey || (typeof process !== 'undefined' && process.env && process.env.API_KEY ? process.env.API_KEY : '');
+            if (!key) throw new Error("请先设置API Key");
+
+            const contents = await Promise.all(history.map(async (msg) => {
+                const parts: any[] = [{ text: msg.text }];
+                if (msg.files && msg.files.length > 0) {
+                   msg.files.forEach(f => {
+                       const base64 = f.data.split(',')[1];
+                       parts.push({
+                           inlineData: {
+                               mimeType: f.type,
+                               data: base64
+                           }
+                       });
+                   });
+                }
+                return {
+                    role: msg.role === 'model' ? 'model' : 'user',
+                    parts: parts
+                };
+            }));
+            
+            const res = await fetch(`${config.baseUrl}/v1beta/models/gemini-3-flash-preview:generateContent`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${key}`
+                },
+                body: JSON.stringify({ 
+                    contents,
+                    systemInstruction: {
+                        parts: [{ text: "你是一个智能助手。请严格遵守以下规则：1. 必须全程使用中文回答。2. 禁止使用英文（除非代码或专业术语必要）。3. 禁止输出任何思考过程、思维链或内部独白。4. 直接给出用户需要的最终答案，不要有多余的解释。" }]
+                    }
+                })
+            });
+
+            const data = await res.json();
+            
+            if (data.error) throw new Error(data.error.message);
+
+            const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No response";
+            setMessages(prev => [...prev, { role: 'model', text: responseText }]);
+
+        } catch (error: any) {
+            setMessages(prev => [...prev, { role: 'model', text: `Error: ${error.message}`, error: true }]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const sendMessage = async () => {
+        if ((!input.trim() && attachments.length === 0) || isLoading) return;
+
+        const userMsg: ChatMessage = {
+            role: 'user',
+            text: input,
+            files: attachments.map(a => ({ type: a.file.type, data: a.preview }))
+        };
+
+        const newHistory = [...messages, userMsg];
+        setMessages(newHistory);
+        setInput('');
+        setAttachments([]);
+        
+        await generateResponse(newHistory);
+    };
+
+    const handleCopy = (text: string, idx: number) => {
+        navigator.clipboard.writeText(text);
+        setCopiedId(idx);
+        setTimeout(() => setCopiedId(null), 2000);
+    };
+
+    const handleDelete = (idx: number) => {
+        setMessages(prev => prev.filter((_, i) => i !== idx));
+    };
+
+    const handleRegenerate = (idx: number) => {
+        if (isLoading) return;
+        // Keep history up to the message before this one
+        const newHistory = messages.slice(0, idx);
+        setMessages(newHistory);
+        generateResponse(newHistory);
+    };
+
+    const handleClearChat = () => {
+        setMessages([{ role: 'model', text: '你好！我是VIVA智能助手。我可以帮你解答问题、分析文档或处理多媒体内容。\n支持: 文本, 图片, 音频, 视频, PDF。' }]);
+        setInput('');
+        setAttachments([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const getIconForType = (type: string) => {
+        switch(type) {
+            case 'image': return <ImageIcon className="w-3 h-3"/>;
+            case 'audio': return <Music className="w-3 h-3"/>;
+            case 'video': return <Video className="w-3 h-3"/>;
+            case 'pdf': return <FileText className="w-3 h-3"/>;
+            default: return <Paperclip className="w-3 h-3"/>;
+        }
+    };
+
+    const toggleOpen = () => {
+        if (!isDragging) setIsOpen(!isOpen);
+    };
+
+    return (
+        <div style={{ position: 'fixed', left: position.x, top: position.y, zIndex: 9999 }} 
+             className="flex flex-col items-end gap-2">
+            
+            {/* Chat Window */}
+            {isOpen && (
+                <div className="w-[350px] md:w-[400px] h-[500px] bg-white border-4 border-black brutalist-shadow flex flex-col mb-2 animate-in slide-in-from-bottom-5 fade-in duration-200 origin-bottom-right absolute bottom-16 right-0">
+                    <div className="bg-brand-yellow p-3 border-b-4 border-black flex justify-between items-center cursor-move" onMouseDown={handleMouseDown}>
+                        <div className="flex items-center gap-2">
+                             <Bot className="w-6 h-6 text-black" />
+                             <span className="font-bold uppercase italic text-lg">AI Assistant</span>
+                        </div>
+                        <button onClick={() => setIsOpen(false)} className="hover:bg-brand-red hover:text-white border-2 border-transparent hover:border-black p-1 transition-all rounded-sm">
+                            <Minimize2 className="w-5 h-5" />
+                        </button>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                        {messages.map((msg, idx) => (
+                            <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} group mb-2`}>
+                                <div className={`max-w-[85%] border-2 border-black p-3 ${msg.role === 'user' ? 'bg-brand-blue text-white' : 'bg-white text-black'}`}>
+                                    {msg.files && msg.files.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {msg.files.map((f, i) => (
+                                                <div key={i} className="bg-black/10 px-2 py-1 text-xs rounded flex items-center gap-1">
+                                                    {getIconForType(f.type === 'application/pdf' ? 'pdf' : f.type.split('/')[0])}
+                                                    {f.type.includes('image') ? 'Image' : 'File'}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <pre className={`whitespace-pre-wrap font-sans text-sm ${msg.error ? 'text-red-500' : ''}`}>{msg.text}</pre>
+                                </div>
+                                {msg.role === 'model' && !msg.error && (
+                                    <div className="flex items-center gap-2 mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                         <button onClick={() => handleCopy(msg.text, idx)} className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-black uppercase transition-colors" title="复制/Copy">
+                                            {copiedId === idx ? <Check className="w-3 h-3 text-brand-green"/> : <Copy className="w-3 h-3"/>}
+                                            复制
+                                         </button>
+                                         {idx > 0 && (
+                                            <button onClick={() => handleRegenerate(idx)} disabled={isLoading} className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-black uppercase transition-colors disabled:opacity-50" title="重新生成/Regenerate">
+                                                <RefreshCw className={`w-3 h-3 ${isLoading && idx === messages.length -1 ? 'animate-spin' : ''}`}/>
+                                                重新回答
+                                            </button>
+                                         )}
+                                         <button onClick={() => handleDelete(idx)} className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-brand-red uppercase transition-colors" title="删除/Delete">
+                                            <Trash2 className="w-3 h-3"/>
+                                            删除
+                                         </button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                        {isLoading && (
+                            <div className="flex justify-start">
+                                <div className="bg-white border-2 border-black p-3 flex items-center gap-2">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span className="text-xs font-bold uppercase italic">Thinking...</span>
+                                </div>
+                            </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                    </div>
+                    
+                    <div className="p-3 bg-white border-t-4 border-black">
+                        {attachments.length > 0 && (
+                            <div className="flex gap-2 mb-2 overflow-x-auto pt-3 pr-3 pb-2">
+                                {attachments.map((att, i) => (
+                                    <div key={i} className="relative flex-shrink-0 bg-slate-100 border-2 border-black w-12 h-12 flex items-center justify-center">
+                                        {att.type === 'image' ? (
+                                            <img src={att.preview} className="w-full h-full object-cover" />
+                                        ) : (
+                                            getIconForType(att.type)
+                                        )}
+                                        <button onClick={() => removeAttachment(i)} className="absolute -top-2.5 -right-2.5 bg-brand-red text-white border border-black w-5 h-5 flex items-center justify-center text-[10px] z-10">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="flex items-end gap-2">
+                            <button onClick={() => fileInputRef.current?.click()} className="p-2 border-2 border-black hover:bg-slate-100 transition-colors h-[42px] w-[42px] flex items-center justify-center" title="Upload File">
+                                <Paperclip className="w-5 h-5" />
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef} 
+                                    className="hidden" 
+                                    multiple 
+                                    accept="image/*,audio/*,video/*,application/pdf"
+                                    onChange={handleFileSelect}
+                                />
+                            </button>
+                            <div className="flex-1 relative">
+                                <textarea 
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                                    placeholder="Message..."
+                                    className="w-full p-2 border-2 border-black resize-none h-[42px] focus:bg-brand-cream focus:outline-none text-sm font-medium pr-8"
+                                />
+                            </div>
+                            <button 
+                                onClick={handleClearChat} 
+                                className="p-2 bg-slate-100 border-2 border-black hover:bg-brand-red hover:text-white transition-all h-[42px] w-[42px] flex items-center justify-center"
+                                title="清空对话 / Reset Chat"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                            <button 
+                                onClick={sendMessage} 
+                                disabled={isLoading || (!input.trim() && attachments.length === 0)}
+                                className="p-2 bg-brand-green border-2 border-black hover:bg-brand-green/80 transition-all disabled:grayscale disabled:opacity-50 h-[42px] w-[42px] flex items-center justify-center"
+                            >
+                                <Send className="w-5 h-5" />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Floating Icon */}
+            <button 
+                onMouseDown={handleMouseDown}
+                onClick={toggleOpen}
+                className={`w-14 h-14 bg-brand-yellow border-4 border-black rounded-full flex items-center justify-center transition-all cursor-move z-50 group relative ${isDragging ? 'cursor-grabbing' : ''}`}
+            >
+                {isOpen ? <X className="w-8 h-8"/> : <Bot className="w-8 h-8 group-hover:scale-110 transition-transform"/>}
+                {!isOpen && <div className="absolute -top-1 -right-1 w-4 h-4 bg-brand-red border-2 border-black rounded-full"></div>}
+            </button>
+        </div>
+    );
+};
+
 // --- Sub-components ---
 
 const SectionLabel = ({ text }: { text: string }) => (
@@ -406,7 +750,7 @@ const ModalHeader = ({ title, icon: Icon, onClose, bgColor = "bg-brand-yellow" }
 );
 
 const App = () => {
-  const [mainCategory, setMainCategory] = useState<'image' | 'video' | 'agent'>('image');
+  const [mainCategory, setMainCategory] = useState<'image' | 'video' | 'proxy'>('image');
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [selectedVideoModel, setSelectedVideoModel] = useState(VIDEO_MODELS[0].id);
   const [videoOptionIdx, setVideoOptionIdx] = useState(0);
@@ -417,9 +761,11 @@ const App = () => {
   const [config, setConfig] = useState<AppConfig>({ baseUrl: FIXED_BASE_URL, apiKey: '' });
   const [tempConfig, setTempConfig] = useState<AppConfig>(config);
   const [prompt, setPrompt] = useState('');
+  const [proxyText, setProxyText] = useState('');
   const [libraryPrompts, setLibraryPrompts] = useState<SavedPrompt[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
+  const [referenceVideo, setReferenceVideo] = useState<ReferenceImage | null>(null);
   const [imageSize, setImageSize] = useState('AUTO');
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [generationCount, setGenerationCount] = useState(1);
@@ -434,10 +780,6 @@ const App = () => {
   const [draggedPromptIdx, setDraggedPromptIdx] = useState<number | null>(null);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   
-  // Agent State
-  const [agentUser, setAgentUser] = useState<string | null>(null);
-  const [loginUser, setLoginUser] = useState('');
-
   // Library State
   const [editingLibraryId, setEditingLibraryId] = useState<string | null>(null);
   const [editingLibraryText, setEditingLibraryText] = useState('');
@@ -468,20 +810,21 @@ const App = () => {
   // Safe process.env access
   const safeEnvKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : '';
 
-  const isVideoMode = mainCategory === 'video' || mainCategory === 'agent';
+  const isVideoMode = mainCategory === 'video';
+  const isProxyMode = mainCategory === 'proxy';
 
   useEffect(() => {
     configRef.current = config;
   }, [config]);
 
   useEffect(() => {
-    if (!isVideoMode) {
+    if (!isVideoMode && !isProxyMode) {
       const model = MODELS.find(m => m.id === selectedModel);
       if (model) {
         if (!model.supportedAspectRatios.includes(aspectRatio)) setAspectRatio(model.supportedAspectRatios[0]);
         if (!model.supportedResolutions.includes(imageSize)) setImageSize(model.supportedResolutions[0]);
       }
-    } else {
+    } else if (isVideoMode) {
       const model = VIDEO_MODELS.find(m => m.id === selectedVideoModel);
       if (model) {
           if (model.supportedAspectRatios && !model.supportedAspectRatios.includes(videoRatio)) {
@@ -490,16 +833,20 @@ const App = () => {
       }
 
       const max = (selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1;
-      if (referenceImages.length > max) {
+      if (referenceImages.length > max && selectedVideoModel !== 'kling-custom-elements') {
         setReferenceImages(prev => prev.slice(0, max));
+      } else if (selectedVideoModel === 'kling-custom-elements') {
+         if (referenceImages.length > 1) setReferenceImages(prev => prev.slice(0, 1));
       }
     }
-  }, [selectedModel, selectedVideoModel, mainCategory, aspectRatio, imageSize, videoRatio, isVideoMode]);
+  }, [selectedModel, selectedVideoModel, mainCategory, aspectRatio, imageSize, videoRatio, isVideoMode, isProxyMode]);
 
   useEffect(() => {
     if (error && error.includes('张参考图')) {
       const currentModel = MODELS.find(m => m.id === selectedModel);
-      const max = (!isVideoMode) ? (currentModel?.maxImages || 4) : ((selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1);
+      const max = (!isVideoMode) ? (currentModel?.maxImages || 4) : 
+                  (selectedVideoModel === 'kling-custom-elements' ? 1 : 
+                  ((selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1));
       if (referenceImages.length <= max) {
         setError(null);
       }
@@ -517,12 +864,16 @@ const App = () => {
         const sorted = assets.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setGeneratedAssets(sorted);
         // Restart video polling
-        sorted.filter(a => a.type === 'video' && (a.status === 'queued' || a.status === 'processing'))
+        sorted.filter(a => a.type === 'video' && (a.status === 'queued' || a.status === 'processing') && a.modelId !== 'kling-custom-elements')
               .forEach(v => startVideoPolling(v.taskId!, v.id, v.timestamp, v.modelId));
         
         // Restart Kling Image polling
         sorted.filter(a => a.type === 'image' && a.modelId === 'kling-image-o1' && (a.status === 'queued' || a.status === 'processing'))
               .forEach(v => startKlingImagePolling(v.taskId!, v.id, v.timestamp));
+
+        // Restart Kling Motion polling
+        sorted.filter(a => a.type === 'video' && a.modelId === 'kling-custom-elements' && (a.status === 'queued' || a.status === 'processing'))
+              .forEach(v => startKlingMotionPolling(v.taskId!, v.id, v.timestamp));
     });
 
     // Load library prompts
@@ -582,25 +933,6 @@ const App = () => {
     setError(null);
   };
   
-  const handleAgentClick = () => {
-    if (agentUser) {
-        setMainCategory('agent');
-    } else {
-        setLoginUser('');
-        setActiveModal('agent-login');
-    }
-  };
-
-  const handleAgentLogin = () => {
-    if (AGENT_USERS.includes(loginUser.trim())) {
-        setAgentUser(loginUser.trim());
-        setMainCategory('agent');
-        setActiveModal(null);
-    } else {
-        alert("无权访问 / Access Denied");
-    }
-  };
-
   const startKlingImagePolling = (taskId: string, assetId: string, startTime: number) => {
     const interval = setInterval(async () => {
         let key = configRef.current.apiKey || safeEnvKey;
@@ -639,6 +971,48 @@ const App = () => {
             }
         } catch (e) {
             console.error("Polling error for kling task", taskId, e);
+        }
+    }, 3000);
+  };
+
+  const startKlingMotionPolling = (taskId: string, assetId: string, startTime: number) => {
+    const interval = setInterval(async () => {
+        let key = configRef.current.apiKey || safeEnvKey;
+        if (!key || !taskId) { clearInterval(interval); return; }
+        try {
+            const url = `${configRef.current.baseUrl}/kling/v1/videos/motion-control/${taskId}`;
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } });
+            const data = await res.json();
+            
+            const taskStatus = data.data?.task_status || '';
+            
+            if (taskStatus === 'succeed' || taskStatus === 'completed') {
+                 const videos = data.data?.task_result?.videos;
+                 const videoUrl = videos && videos.length > 0 ? videos[0].url : null;
+                 
+                 if (videoUrl) {
+                    const finishTime = Date.now();
+                    const diff = Math.round((finishTime - startTime) / 1000);
+                    const assetUpdates = { status: 'completed' as const, url: videoUrl, genTimeLabel: `${diff}s` };
+                    
+                    setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, ...assetUpdates } : a));
+                    
+                    const assets = await getAllAssetsFromDB();
+                    const existing = assets.find(a => a.id === assetId);
+                    if (existing) {
+                        saveAssetToDB({ ...existing, ...assetUpdates });
+                    }
+                 } else {
+                     setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: 'failed', genTimeLabel: '无视频' } : a));
+                 }
+                 clearInterval(interval);
+            } else if (taskStatus === 'failed') {
+                 const errorMsg = data.data?.task_status_msg || '失败';
+                 setGeneratedAssets(prev => prev.map(a => a.id === assetId ? { ...a, status: 'failed', genTimeLabel: errorMsg } : a));
+                 clearInterval(interval);
+            }
+        } catch (e) {
+            console.error("Polling error for kling motion task", taskId, e);
         }
     }, 3000);
   };
@@ -694,6 +1068,19 @@ const App = () => {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+
+    if (selectedVideoModel === 'kling-custom-elements') {
+        const file = files[0];
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const result = reader.result as string;
+            const matches = result.match(/^data:(.+);base64,(.+)$/);
+            if (matches) setReferenceImages([{ id: generateUUID(), mimeType: matches[1], data: matches[2] }]);
+        };
+        reader.readAsDataURL(file);
+        return;
+    }
+
     const currentModel = MODELS.find(m => m.id === selectedModel);
     const max = (!isVideoMode) ? (currentModel?.maxImages || 4) : ((selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1);
     const remaining = max - referenceImages.length;
@@ -712,38 +1099,91 @@ const App = () => {
     });
   };
 
+  const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        const result = reader.result as string;
+        const matches = result.match(/^data:(.+);base64,(.+)$/);
+        if (matches) {
+            setReferenceVideo({ id: generateUUID(), mimeType: matches[1], data: matches[2] });
+        }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const removeReferenceImage = (id: string) => setReferenceImages(prev => prev.filter(img => img.id !== id));
 
   const optimizePrompt = async () => {
-     if (!prompt) return;
+     // Allow optimization if prompt exists OR reference images exist
+     if (!prompt.trim() && referenceImages.length === 0) return;
+     
      let key = config.apiKey || safeEnvKey;
      
      setIsOptimizing(true);
+
+     // If prompt is empty but images exist, provide a default instruction
+     const effectivePrompt = prompt.trim() || (referenceImages.length > 0 ? "请描述这张图片的内容，用于生成类似的创作。" : "");
+     
      let sys = `你是一位专业的AI绘画提示词工程师。
-请将用户的输入（可能是简短的中文或英文）改写成一段高质量、细节丰富的中文绘画提示词。
+请将用户的输入（可能是简短的中文或英文）结合提供的参考图片（如果有），改写成一段高质量、细节丰富的中文绘画提示词。
+分析图片的主体、风格、构图，并将其与用户的文字描述融合。
 扩展核心元素：主体、风格、光影、构图和氛围。
 不要包含任何宽高比参数（如 --ar, --aspect-ratio）。
 只输出优化后的提示词文本，不要输出其他任何解释。`;
 
      if (isVideoMode) {
-       sys = `你是一位专业的AI视频提示词专家。请根据用户的输入，生成一段完整、连贯、高质量的中文视频生成提示词。
+       const currentVideoModelDef = VIDEO_MODELS.find(m => m.id === selectedVideoModel);
+       const durationOption = currentVideoModelDef?.options[videoOptionIdx];
+       const durationSeconds = durationOption ? durationOption.s : '未知';
+
+       sys = `你是一位专业的AI视频提示词专家。
+当前视频生成时长设置为：${durationSeconds}秒。
+请根据用户的输入以及参考图片内容（如果有），生成一段完整、连贯、高质量的中文视频生成提示词。
 该提示词应包含主体描述、场景细节、光影氛围、镜头语言（如运镜方式）和视频风格。
+请确保描述的内容量适合${durationSeconds}秒的视频长度，既不要过于单调，也不要包含过多在短时间内无法呈现的复杂情节。
 要求：
 1. 直接输出最终的提示词段落。
 2. 不要包含任何分析、解释、标题或分点（如"核心主题"、"画面细节"等）。
 3. 确保提示词适合Sora 2或Veo等模型理解。
 4. 仅输出提示词本身。`;
      }
+
      try {
+        const userContent: any[] = [{ type: "text", text: effectivePrompt }];
+        
+        if (referenceImages.length > 0) {
+            referenceImages.forEach(img => {
+                const url = img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`;
+                userContent.push({
+                    type: "image_url",
+                    image_url: { url: url }
+                });
+            });
+        }
+
+        const messages = [
+            { role: "system", content: sys },
+            { role: "user", content: userContent }
+        ];
+
         const res = await fetch(`${config.baseUrl}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-            body: JSON.stringify({ model: OPTIMIZER_MODEL, messages: [{ role: "system", content: sys }, { role: "user", content: prompt }] })
+            body: JSON.stringify({ 
+                model: OPTIMIZER_MODEL, 
+                messages: messages,
+                max_tokens: 2000 
+            })
         });
         const data = await res.json();
+        
+        if (data.error) throw new Error(data.error.message || "Optimization Error");
+
         const optimized = data.choices?.[0]?.message?.content?.trim();
         if (optimized) { setPrompt(optimized); setError(null); }
-     } catch (e) { setError("AI优化失败"); } finally { setIsOptimizing(false); }
+     } catch (e: any) { setError("AI优化失败: " + (e.message || "未知错误")); } finally { setIsOptimizing(false); }
   };
 
   const selectStyle = (style: string) => {
@@ -981,6 +1421,13 @@ const App = () => {
     const tRatio = overrideConfig?.videoRatio ?? videoRatio;
     const tOptIdx = overrideConfig?.videoOptionIdx ?? videoOptionIdx;
     const tRefs = overrideConfig?.referenceImages ?? referenceImages;
+    const tRefVideo = overrideConfig?.referenceVideo ?? referenceVideo;
+
+    // Kling Custom Elements Validation
+    if (tModelId === 'kling-custom-elements') {
+        if (!tRefs || tRefs.length === 0) { setError("Kling Motion: 需要上传一张静态角色图"); return; }
+        if (!tRefVideo) { setError("Kling Motion: 需要上传动作参考视频"); return; }
+    }
 
     for (let i = 0; i < count; i++) {
       placeholders.push({
@@ -989,7 +1436,7 @@ const App = () => {
         durationText: `${VIDEO_MODELS.find(m => m.id === tModelId)!.options[tOptIdx].s}s`,
         genTimeLabel: '生成中...',
         timestamp: startTime, status: 'loading',
-        config: { modelId: tModelId, videoRatio: tRatio, videoOptionIdx: tOptIdx, prompt: tPrompt, referenceImages: [...tRefs], type: 'video' }
+        config: { modelId: tModelId, videoRatio: tRatio, videoOptionIdx: tOptIdx, prompt: tPrompt, referenceImages: [...tRefs], referenceVideo: tRefVideo ? {...tRefVideo} : null, type: 'video' }
       });
     }
     setGeneratedAssets(prev => [...placeholders, ...prev]);
@@ -1002,7 +1449,24 @@ const App = () => {
             const isGrokModel = tModelId.startsWith('grok');
             const isJimengModel = tModelId.startsWith('jimeng');
             
-            if (isVeoModel || isGrokModel || isJimengModel) {
+            if (tModelId === 'kling-custom-elements') {
+                 // Kling Motion Control Logic
+                 const payload = {
+                    model_name: "kling-custom-elements",
+                    prompt: tPrompt,
+                    image: tRefs[0].data.startsWith('http') ? tRefs[0].data : `data:${tRefs[0].mimeType};base64,${tRefs[0].data}`,
+                    video: tRefVideo.data.startsWith('http') ? tRefVideo.data : `data:${tRefVideo.mimeType};base64,${tRefVideo.data}`,
+                    aspect_ratio: tRatio,
+                    duration: VIDEO_MODELS.find(m => m.id === tModelId)!.options[tOptIdx].s
+                 };
+
+                 response = await fetch(`${config.baseUrl}/kling/v1/videos/motion-control`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                    body: JSON.stringify(payload)
+                 });
+
+            } else if (isVeoModel || isGrokModel || isJimengModel) {
                 const payload: any = {
                     model: tModelId,
                     prompt: tPrompt,
@@ -1050,13 +1514,20 @@ const App = () => {
             }
             
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error?.message || "视频生成接口错误");
+            if (!response.ok || (data.code && data.code !== 0)) throw new Error(data.error?.message || data.message || "视频生成接口错误");
             
-            const tid = data.id || data.data?.id || data.task_id || data.taskId;
+            const tid = data.id || data.data?.id || data.data?.task_id || data.task_id || data.taskId;
+            if (!tid) throw new Error("No Task ID returned");
+
             const updatedAsset: any = { ...placeholders.find(x => x.id === pId), status: 'queued', taskId: tid };
             setGeneratedAssets(prev => prev.map(a => a.id === pId ? updatedAsset : a));
             saveAssetToDB(updatedAsset);
-            startVideoPolling(tid, pId, startTime, tModelId);
+            
+            if (tModelId === 'kling-custom-elements') {
+                startKlingMotionPolling(tid, pId, startTime);
+            } else {
+                startVideoPolling(tid, pId, startTime, tModelId);
+            }
         };
         
         placeholders.forEach(p => createOne(p.id));
@@ -1331,6 +1802,7 @@ const App = () => {
      if (asset.config) {
         setPrompt(asset.config.prompt);
         setReferenceImages(asset.config.referenceImages || []);
+        if (asset.config.referenceVideo) setReferenceVideo(asset.config.referenceVideo);
         if (asset.type === 'image') {
            setMainCategory('image');
            setSelectedModel(asset.config.modelId);
@@ -1398,11 +1870,14 @@ const App = () => {
   const currentVideoModel = VIDEO_MODELS.find(m => m.id === selectedVideoModel);
   const labelClass = "font-normal text-[13px] text-black uppercase";
   const selectClass = "w-full p-1.5 border-2 border-black font-normal bg-white brutalist-shadow-sm focus:outline-none text-xs";
+  const isKlingMotion = isVideoMode && selectedVideoModel === 'kling-custom-elements';
   
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-[#F1F5F9] md:h-screen overflow-hidden" 
          onMouseMove={handleContainerMouseMove} 
          onMouseUp={handleContainerMouseUp}>
+
+      <ChatBot config={config} />
       
       <div className="w-full md:w-[500px] bg-white border-r-4 border-black flex flex-col z-20 brutalist-shadow">
         <header className="bg-brand-yellow px-5 border-b-4 border-black h-20 flex items-center justify-between transition-colors duration-300">
@@ -1420,10 +1895,10 @@ const App = () => {
         <div className="flex-1 overflow-y-auto p-5 space-y-6 no-scrollbar">
           <section className="space-y-3">
             <SectionLabel text="1.创作类型 / Creation Type" />
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-5 gap-2">
               <button 
                 onClick={() => setMainCategory('image')} 
-                className={`relative h-24 flex flex-col items-center justify-center border-2 border-black transition-all duration-300 group overflow-hidden ${mainCategory === 'image' ? 'bg-brand-yellow brutalist-shadow -translate-y-1' : 'bg-white hover:bg-brand-yellow/20'}`}
+                className={`col-span-2 relative h-24 flex flex-col items-center justify-center border-2 border-black transition-all duration-300 group overflow-hidden ${mainCategory === 'image' ? 'bg-brand-yellow brutalist-shadow -translate-y-1' : 'bg-white hover:bg-brand-yellow/20'}`}
               >
                 <div className={`absolute top-0 right-0 p-1 bg-black text-white text-[10px] font-bold uppercase ${mainCategory === 'image' ? 'block' : 'hidden'}`}>Selected</div>
                 <ImageIcon className={`w-8 h-8 mb-1 ${mainCategory === 'image' ? 'text-black scale-110' : 'text-slate-400 group-hover:text-black group-hover:scale-110'} transition-transform duration-300`} strokeWidth={2.5} />
@@ -1432,7 +1907,7 @@ const App = () => {
 
               <button 
                 onClick={() => setMainCategory('video')} 
-                className={`relative h-24 flex flex-col items-center justify-center border-2 border-black transition-all duration-300 group overflow-hidden ${mainCategory === 'video' ? 'bg-brand-red brutalist-shadow -translate-y-1' : 'bg-white hover:bg-brand-red/10'}`}
+                className={`col-span-2 relative h-24 flex flex-col items-center justify-center border-2 border-black transition-all duration-300 group overflow-hidden ${mainCategory === 'video' ? 'bg-brand-red brutalist-shadow -translate-y-1' : 'bg-white hover:bg-brand-red/10'}`}
               >
                 <div className={`absolute top-0 right-0 p-1 bg-black text-white text-[10px] font-bold uppercase ${mainCategory === 'video' ? 'block' : 'hidden'}`}>Selected</div>
                 <Film className={`w-8 h-8 mb-1 ${mainCategory === 'video' ? 'text-white scale-110' : 'text-slate-400 group-hover:text-brand-red group-hover:scale-110'} transition-transform duration-300`} strokeWidth={2.5} />
@@ -1440,162 +1915,270 @@ const App = () => {
               </button>
 
               <button 
-                onClick={handleAgentClick} 
-                className={`relative h-24 flex flex-col items-center justify-center border-2 border-black transition-all duration-300 group overflow-hidden ${mainCategory === 'agent' ? 'bg-brand-blue brutalist-shadow -translate-y-1' : 'bg-white hover:bg-brand-blue/10'}`}
+                onClick={() => setMainCategory('proxy')} 
+                className={`col-span-1 relative h-24 flex flex-col items-center justify-center border-2 border-black transition-all duration-300 group overflow-hidden ${mainCategory === 'proxy' ? 'bg-brand-blue brutalist-shadow -translate-y-1' : 'bg-white hover:bg-brand-blue/10'}`}
               >
-                <div className={`absolute top-0 right-0 p-1 bg-black text-white text-[10px] font-bold uppercase ${mainCategory === 'agent' ? 'block' : 'hidden'}`}>Selected</div>
-                <Shield className={`w-8 h-8 mb-1 ${mainCategory === 'agent' ? 'text-white scale-110' : 'text-slate-400 group-hover:text-brand-blue group-hover:scale-110'} transition-transform duration-300`} strokeWidth={2.5} />
-                <span className={`text-sm font-black uppercase italic tracking-tighter ${mainCategory === 'agent' ? 'text-white' : 'text-slate-500 group-hover:text-brand-blue'}`}>代理专区</span>
+                <div className={`absolute top-0 right-0 p-1 bg-black text-white text-[10px] font-bold uppercase ${mainCategory === 'proxy' ? 'block' : 'hidden'}`}><Check className="w-3 h-3"/></div>
+                <Shield className={`w-8 h-8 mb-1 ${mainCategory === 'proxy' ? 'text-white scale-110' : 'text-slate-400 group-hover:text-brand-blue group-hover:scale-110'} transition-transform duration-300`} strokeWidth={2.5} />
+                <span className={`text-sm font-black uppercase italic tracking-tighter ${mainCategory === 'proxy' ? 'text-white' : 'text-slate-500 group-hover:text-brand-blue'}`}>代理</span>
               </button>
             </div>
             
-            <div className={`p-3 bg-brand-cream border-2 border-black brutalist-shadow-sm ${referenceImages.length > 0 ? 'solid-box-green' : 'solid-box-purple'}`}>
-                <div className="flex justify-between items-center mb-1">
-                    <h3 className={labelClass}>参考底稿 (可选) {(isVideoMode) && `(限${(selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? '2' : '1'}张)`}</h3>
-                    {referenceImages.length > 0 && <span className="text-brand-green text-[10px] font-normal flex items-center gap-1"><Check className="w-3 h-3"/> READY</span>}
-                </div>
-                {referenceImages.length > 0 ? (
-                    <div className="flex gap-3 overflow-x-auto pb-1.5 pt-1">
-                        {referenceImages.map((img: ReferenceImage, idx: number) => (
-                          <div key={img.id} 
-                               className="relative w-24 h-24 border-2 border-black bg-white brutalist-shadow-sm flex-shrink-0 cursor-pointer"
-                               onDoubleClick={() => setPreviewRefImage(img)}>
-                            <img src={img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`} className="w-full h-full object-cover" />
-                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] text-center uppercase py-0.5">
-                               {isVideoMode && (selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? (idx === 0 ? '首帧' : '尾帧') : 'REF'}
-                            </div>
-                            <button onClick={(e) => { e.stopPropagation(); removeReferenceImage(img.id); }} 
-                                    className="absolute -top-2.5 -right-2.5 bg-brand-red text-white border-2 border-black w-6 h-6 flex items-center justify-center hover:scale-110 transition-transform brutalist-shadow-sm z-10">
-                              <X className="w-4 h-4"/>
-                            </button>
+            {/* Reference Images Section - Only show if NOT proxy mode */}
+            {!isProxyMode && (
+              <div className={`p-3 bg-brand-cream border-2 border-black brutalist-shadow-sm ${referenceImages.length > 0 || referenceVideo ? 'solid-box-green' : 'solid-box-purple'}`}>
+                  {isKlingMotion ? (
+                     <div className="space-y-4">
+                        {/* Character Image */}
+                        <div>
+                             <div className="flex justify-between items-center mb-1">
+                                  <h3 className={labelClass}>静态角色图 (Subject)</h3>
+                                  {referenceImages.length > 0 && <span className="text-brand-green text-[10px] font-normal flex items-center gap-1"><Check className="w-3 h-3"/> READY</span>}
+                             </div>
+                             {referenceImages.length > 0 ? (
+                                <div className="relative w-full h-32 border-2 border-black bg-white brutalist-shadow-sm group">
+                                    <img src={referenceImages[0].data.startsWith('http') ? referenceImages[0].data : `data:${referenceImages[0].mimeType};base64,${referenceImages[0].data}`} className="w-full h-full object-contain" />
+                                    <button onClick={(e) => { e.stopPropagation(); setReferenceImages([]); }} 
+                                            className="absolute top-2 right-2 bg-brand-red text-white border-2 border-black w-6 h-6 flex items-center justify-center hover:scale-110 transition-transform brutalist-shadow-sm z-10">
+                                      <X className="w-4 h-4"/>
+                                    </button>
+                                </div>
+                             ) : (
+                                <label className="w-full h-32 flex flex-col items-center justify-center bg-white border-2 border-black border-dashed cursor-pointer hover:bg-slate-50 transition-colors">
+                                    <Plus className="w-8 h-8 text-slate-400 mb-2"/>
+                                    <span className="text-xs font-bold text-slate-500 uppercase">Upload Image</span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                                </label>
+                             )}
+                        </div>
+                        {/* Motion Video */}
+                        <div>
+                             <div className="flex justify-between items-center mb-1">
+                                  <h3 className={labelClass}>动作参考视频 (Motion)</h3>
+                                  {referenceVideo && <span className="text-brand-green text-[10px] font-normal flex items-center gap-1"><Check className="w-3 h-3"/> READY</span>}
+                             </div>
+                             {referenceVideo ? (
+                                <div className="relative w-full h-32 border-2 border-black bg-black brutalist-shadow-sm group">
+                                    <video src={referenceVideo.data.startsWith('http') ? referenceVideo.data : `data:${referenceVideo.mimeType};base64,${referenceVideo.data}`} className="w-full h-full object-contain" controls />
+                                    <button onClick={(e) => { e.stopPropagation(); setReferenceVideo(null); }} 
+                                            className="absolute top-2 right-2 bg-brand-red text-white border-2 border-black w-6 h-6 flex items-center justify-center hover:scale-110 transition-transform brutalist-shadow-sm z-10">
+                                      <X className="w-4 h-4"/>
+                                    </button>
+                                </div>
+                             ) : (
+                                <label className="w-full h-32 flex flex-col items-center justify-center bg-white border-2 border-black border-dashed cursor-pointer hover:bg-slate-50 transition-colors">
+                                    <Video className="w-8 h-8 text-slate-400 mb-2"/>
+                                    <span className="text-xs font-bold text-slate-500 uppercase">Upload Video</span>
+                                    <input type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
+                                </label>
+                             )}
+                        </div>
+                     </div>
+                  ) : (
+                      <>
+                          <div className="flex justify-between items-center mb-1">
+                              <h3 className={labelClass}>参考底稿 (可选) {(isVideoMode) && `(限${(selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? '2' : '1'}张)`}</h3>
+                              {referenceImages.length > 0 && <span className="text-brand-green text-[10px] font-normal flex items-center gap-1"><Check className="w-3 h-3"/> READY</span>}
                           </div>
-                        ))}
-                        {(!isVideoMode ? referenceImages.length < (currentImageModel?.maxImages || 4) : referenceImages.length < ((selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1)) && (
-                          <label className="w-24 h-24 border-2 border-black flex items-center justify-center cursor-pointer bg-white brutalist-shadow-sm">
-                            <Plus className="w-6 h-6" /><input type="file" multiple={!isVideoMode} className="hidden" onChange={handleImageUpload} />
-                          </label>
-                        )}
-                    </div>
-                ) : (
-                    <label className="w-full py-2.5 flex flex-col items-center justify-center bg-brand-purple text-white border-2 border-black brutalist-shadow-sm cursor-pointer font-normal uppercase text-[13px] hover:translate-y-1 hover:shadow-none transition-all">
-                        <input type="file" multiple={!isVideoMode} className="hidden" onChange={handleImageUpload} />
-                        上传图片/UPLOAD
-                    </label>
-                )}
-            </div>
+                          {referenceImages.length > 0 ? (
+                              <div className="flex gap-3 overflow-x-auto pb-1.5 pt-4 pr-4 pl-1">
+                                  {referenceImages.map((img: ReferenceImage, idx: number) => (
+                                    <div key={img.id} 
+                                         className="relative w-24 h-24 border-2 border-black bg-white brutalist-shadow-sm flex-shrink-0 cursor-pointer"
+                                         onDoubleClick={() => setPreviewRefImage(img)}>
+                                      <img src={img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`} className="w-full h-full object-cover" />
+                                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] text-center uppercase py-0.5">
+                                         {isVideoMode && (selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? (idx === 0 ? '首帧' : '尾帧') : 'REF'}
+                                      </div>
+                                      <button onClick={(e) => { e.stopPropagation(); removeReferenceImage(img.id); }} 
+                                              className="absolute -top-2.5 -right-2.5 bg-brand-red text-white border-2 border-black w-6 h-6 flex items-center justify-center hover:scale-110 transition-transform brutalist-shadow-sm z-10">
+                                        <X className="w-4 h-4"/>
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {(!isVideoMode ? referenceImages.length < (currentImageModel?.maxImages || 4) : referenceImages.length < ((selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1)) && (
+                                    <label className="w-24 h-24 border-2 border-black flex items-center justify-center cursor-pointer bg-white brutalist-shadow-sm">
+                                      <Plus className="w-6 h-6" /><input type="file" multiple={!isVideoMode} className="hidden" onChange={handleImageUpload} />
+                                    </label>
+                                  )}
+                              </div>
+                          ) : (
+                              <label className="w-full py-2.5 flex flex-col items-center justify-center bg-brand-purple text-white border-2 border-black brutalist-shadow-sm cursor-pointer font-normal uppercase text-[13px] hover:translate-y-1 hover:shadow-none transition-all">
+                                  <input type="file" multiple={!isVideoMode} className="hidden" onChange={handleImageUpload} />
+                                  上传图片/UPLOAD
+                              </label>
+                          )}
+                      </>
+                  )}
+              </div>
+            )}
           </section>
 
           <section className="space-y-3">
-            <SectionLabel text="2. 生成配置 / Generation Settings" />
-            <div className="p-3 bg-brand-cream border-2 border-black brutalist-shadow-sm space-y-4">
-              <div className="space-y-1">
-                <label className={labelClass}>选择生成模型 GENRE</label>
-                <select value={!isVideoMode ? selectedModel : selectedVideoModel} onChange={(e) => !isVideoMode ? setSelectedModel(e.target.value) : setSelectedVideoModel(e.target.value)} className={selectClass}>
-                  {(!isVideoMode ? MODELS : VIDEO_MODELS).map(m => <option key={m.id} value={m.id}>{m.name.toUpperCase()}</option>)}
-                </select>
-              </div>
-
-              {!isVideoMode && currentImageModel && (
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="space-y-1">
-                    <label className={labelClass}>比例 ASPECT</label>
-                    <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className={selectClass}>
-                      {currentImageModel.supportedAspectRatios.map(r => <option key={r} value={r}>{ASPECT_RATIO_LABELS[r] || r}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className={labelClass}>分辨率 QUALITY</label>
-                    <select value={imageSize} onChange={(e) => setImageSize(e.target.value)} className={selectClass}>
-                      {currentImageModel.supportedResolutions.map(res => <option key={res} value={res}>{res}</option>)}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {isVideoMode && currentVideoModel && (
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="space-y-1">
-                    <label className={labelClass}>比例 ASPECT</label>
-                    <select value={videoRatio} onChange={(e) => setVideoRatio(e.target.value)} className={selectClass}>
-                      {currentVideoModel.supportedAspectRatios.map(r => <option key={r} value={r}>{ASPECT_RATIO_LABELS[r] || r}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className={labelClass}>时长/质量 DURATION</label>
-                    <select value={videoOptionIdx} onChange={(e) => setVideoOptionIdx(parseInt(e.target.value))} className={selectClass}>
-                      {currentVideoModel.options.map((opt, idx) => (
-                        <option key={idx} value={idx}>{opt.s}S ({opt.q})</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <label className={labelClass}>生成数量 BATCH</label>
-                <div className="flex items-center gap-2.5 bg-white border-2 border-black p-1.5 brutalist-shadow-sm">
-                  <input type="range" min="1" max="10" value={generationCount} onChange={(e) => setGenerationCount(parseInt(e.target.value))} className="flex-1 accent-black h-4" />
-                  <span className="font-normal text-black text-xs">{generationCount}</span>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between items-end mb-1.5">
-                  <label className={labelClass}>提示词描述 PROMPT</label>
-                </div>
+            <SectionLabel text={isProxyMode ? "2. 代理权益 / Proxy Benefits" : "2. 生成配置 / Generation Settings"} />
+            
+            {isProxyMode ? (
+              <div className="p-4 bg-white border-2 border-black brutalist-shadow-sm space-y-6 font-bold leading-relaxed select-text">
+                <h3 className="text-2xl text-center text-[#E5312F] font-black tracking-tighter">代理本站核心优势</h3>
                 
-                {/* Updated Toolbar matching the provided image style */}
-                <div className="flex gap-1.5 mb-2 bg-[#FFFDE7] p-1 border-2 border-black brutalist-shadow-sm">
-                  <button onClick={() => setActiveModal('library')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#A855F7] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
-                    <Bookmark className="w-3.5 h-3.5"/> 库
-                  </button>
-                  <button onClick={handleOpenSaveModal} disabled={!prompt.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F472B6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
-                    <Save className="w-3.5 h-3.5"/> 保存
-                  </button>
-                  <button onClick={() => setActiveModal('styles')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3B82F6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
-                    <Palette className="w-3.5 h-3.5"/> 风格
-                  </button>
-                  <button onClick={() => setActiveModal('edit-prompt')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4ADE80] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
-                    <Maximize2 className="w-3.5 h-3.5"/> 展开
-                  </button>
-                  <button onClick={optimizePrompt} disabled={isOptimizing} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#F7CE00] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
-                    {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <><Wand2 className="w-3.5 h-3.5"/> AI优化</>}
-                  </button>
+                <div className="space-y-2 text-[#003366] text-base">
+                    <p>1、提供超低的成本使用价，自用省米，运营赚米;</p>
+                    <p>2、提供同<a href="https://www.vivaapi.cn" target="_blank" className="underline hover:text-blue-800">www.vivaapi.cn</a>一样的AI聚合API平台;</p>
+                    <p>3、提供同<a href="http://p.vivaapi.cn" target="_blank" className="underline hover:text-blue-800">p.vivaapi.cn</a>一样的AI应用平台;</p>
+                    <p>4、无需服务器、无需后续管理、你只需提供一个域名;</p>
+                    <p>5、教你0基础搭建部署上线任何AI应用;</p>
+                    <p>6、代理费达标后可全额返还;</p>
+                    <p>7、2026弯道超车的机会，望君把握。</p>
                 </div>
 
-                <div className="relative group">
-                    <textarea 
-                        value={prompt} 
-                        onChange={(e) => setPrompt(e.target.value)} 
-                        placeholder="描述您的创作奇想..." 
-                        className="w-full h-48 p-3 border-2 border-black font-normal text-[12px] bg-white focus:outline-none brutalist-input resize-y" 
-                    />
-                    {showSaveSuccess && (
-                      <div className="absolute top-2 right-2 bg-brand-green text-black border-2 border-black px-2 py-1 text-[10px] font-bold brutalist-shadow-sm animate-in fade-in slide-in-from-right-2 z-20 italic">
-                        保存成功
-                      </div>
-                    )}
+                <div className="text-[#E5312F] space-y-1 text-base">
+                    <p>都2026年了，你还在用别人的AI平台</p>
+                    <p>为什么不根据自己的实际应用及想法自己搭建一个</p>
+                </div>
+
+                <div className="space-y-1 text-base">
+                    <p className="text-[#16A34A]">你可选择创建的AI应用方向:</p>
+                    <p className="text-[#16A34A]">图像生成，剧本分镜，教育辅导，文档处理</p>
+                    <p className="text-[#16A34A]">医疗健康，金融理财，生活助手，算命大师</p>
+                </div>
+
+                <div className="text-[#EA580C] space-y-1 text-base">
+                    <p>做这些AI应用，完全0基础，不用担心不会操作</p>
+                    <p>只需要找到同行的页面</p>
+                    <p>复制给AI，并接入我这边提供的API接入文档</p>
+                    <p>打几个字，告诉AI创建一样功能的应用就搞定</p>
+                </div>
+
+                <div className="pt-4 border-t-2 border-dashed border-slate-300">
+                    <div className="flex flex-col items-center gap-2">
+                        <h4 className="font-bold text-lg text-black uppercase italic flex items-center justify-center gap-2">
+                            <span className="w-2 h-2 bg-brand-green rounded-full border border-black"></span>
+                            招募优质API代理
+                        </h4>
+                        <a href="https://ai.feishu.cn/wiki/O6Q9wrxxci898Wkj6ndcFnlknJd?from=from_copylink" target="_blank" className="flex items-center justify-center w-full py-3 bg-brand-red text-white border-2 border-black font-bold text-base uppercase hover:bg-black hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all italic gap-2 group">
+                            查看更多详情 <ExternalLink className="w-4 h-4 group-hover:scale-110 transition-transform"/>
+                        </a>
+                    </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-3 bg-brand-cream border-2 border-black brutalist-shadow-sm space-y-4">
+                <div className="space-y-1">
+                  <label className={labelClass}>选择生成模型 GENRE</label>
+                  <select value={!isVideoMode ? selectedModel : selectedVideoModel} onChange={(e) => !isVideoMode ? setSelectedModel(e.target.value) : setSelectedVideoModel(e.target.value)} className={selectClass}>
+                    {(!isVideoMode ? MODELS : VIDEO_MODELS).map(m => <option key={m.id} value={m.id}>{m.name.toUpperCase()}</option>)}
+                  </select>
+                </div>
+
+                {!isVideoMode && currentImageModel && (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className={labelClass}>比例 ASPECT</label>
+                      <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value)} className={selectClass}>
+                        {currentImageModel.supportedAspectRatios.map(r => <option key={r} value={r}>{ASPECT_RATIO_LABELS[r] || r}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className={labelClass}>分辨率 QUALITY</label>
+                      <select value={imageSize} onChange={(e) => setImageSize(e.target.value)} className={selectClass}>
+                        {currentImageModel.supportedResolutions.map(res => <option key={res} value={res}>{res}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {isVideoMode && currentVideoModel && (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <label className={labelClass}>比例 ASPECT</label>
+                      <select value={videoRatio} onChange={(e) => setVideoRatio(e.target.value)} className={selectClass}>
+                        {currentVideoModel.supportedAspectRatios.map(r => <option key={r} value={r}>{ASPECT_RATIO_LABELS[r] || r}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className={labelClass}>时长/质量 DURATION</label>
+                      <select value={videoOptionIdx} onChange={(e) => setVideoOptionIdx(parseInt(e.target.value))} className={selectClass}>
+                        {currentVideoModel.options.map((opt, idx) => (
+                          <option key={idx} value={idx}>{opt.s}S ({opt.q})</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className={labelClass}>生成数量 BATCH</label>
+                  <div className="flex items-center gap-2.5 bg-white border-2 border-black p-1.5 brutalist-shadow-sm">
+                    <input type="range" min="1" max="10" value={generationCount} onChange={(e) => setGenerationCount(parseInt(e.target.value))} className="flex-1 accent-black h-4" />
+                    <span className="font-normal text-black text-xs">{generationCount}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between items-end mb-1.5">
+                    <label className={labelClass}>提示词描述 PROMPT</label>
+                  </div>
+                  
+                  {/* Updated Toolbar matching the provided image style */}
+                  <div className="flex gap-1.5 mb-2 bg-[#FFFDE7] p-1 border-2 border-black brutalist-shadow-sm">
+                    <button onClick={() => setPrompt('')} className="flex items-center justify-center px-2 py-1.5 bg-white text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:bg-brand-red hover:text-white hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap" title="清空提示词">
+                      <Trash2 className="w-3.5 h-3.5"/>
+                    </button>
+                    <button onClick={() => setActiveModal('library')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#A855F7] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
+                      <Bookmark className="w-3.5 h-3.5"/> 库
+                    </button>
+                    <button onClick={handleOpenSaveModal} disabled={!prompt.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F472B6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
+                      <Save className="w-3.5 h-3.5"/> 保存
+                    </button>
+                    <button onClick={() => setActiveModal('styles')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3B82F6] text-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
+                      <Palette className="w-3.5 h-3.5"/> 风格
+                    </button>
+                    <button onClick={() => setActiveModal('edit-prompt')} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4ADE80] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
+                      <Maximize2 className="w-3.5 h-3.5"/> 展开
+                    </button>
+                    <button onClick={optimizePrompt} disabled={isOptimizing} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-[#F7CE00] text-black border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase whitespace-nowrap">
+                      {isOptimizing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <><Wand2 className="w-3.5 h-3.5"/> AI优化</>}
+                    </button>
+                  </div>
+
+                  <div className="relative group">
+                      <textarea 
+                          value={prompt} 
+                          onChange={(e) => setPrompt(e.target.value)} 
+                          placeholder="描述您的创作奇想..." 
+                          className="w-full h-48 p-3 border-2 border-black font-normal text-[12px] bg-white focus:outline-none brutalist-input resize-y" 
+                      />
+                      {showSaveSuccess && (
+                        <div className="absolute top-2 right-2 bg-brand-green text-black border-2 border-black px-2 py-1 text-[10px] font-bold brutalist-shadow-sm animate-in fade-in slide-in-from-right-2 z-20 italic">
+                          保存成功
+                        </div>
+                      )}
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
 
           <div className="space-y-3">
-            <button onClick={() => executeGeneration()} className="w-full py-3 bg-brand-red text-white text-xl font-normal border-2 border-black brutalist-shadow hover:translate-y-1.5 hover:shadow-none transition-all uppercase tracking-tighter">
-              开始创作/Start Creating
-            </button>
-            
-            <div className="bg-white border-2 border-black p-4 brutalist-shadow-sm space-y-1.5">
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="w-4 h-4 text-brand-red" />
-                <span className="font-bold text-[14px]">温馨提示 / TIPS</span>
-              </div>
-              <div className="space-y-1.5 font-['Microsoft_YaHei','微软雅黑',sans-serif]">
-                <p className="text-[12px] font-normal leading-tight text-slate-700">1、首次使用请在设置中输入API令牌；</p>
-                <p className="text-[12px] font-normal leading-tight text-slate-700">2、如遇到多次请求失败请联系客服；</p>
-                <p className="text-[12px] font-normal leading-tight text-slate-700">3、欢迎提供优化建议。</p>
-              </div>
-            </div>
+            {!isProxyMode && (
+              <>
+                <button onClick={() => executeGeneration()} className="w-full py-3 bg-brand-red text-white text-xl font-normal border-2 border-black brutalist-shadow hover:translate-y-1.5 hover:shadow-none transition-all uppercase tracking-tighter">
+                  开始创作/Start Creating
+                </button>
+                
+                <div className="bg-white border-2 border-black p-4 brutalist-shadow-sm space-y-1.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <AlertCircle className="w-4 h-4 text-brand-red" />
+                    <span className="font-bold text-[14px]">温馨提示 / TIPS</span>
+                  </div>
+                  <div className="space-y-1.5 font-['Microsoft_YaHei','微软雅黑',sans-serif]">
+                    <p className="text-[12px] font-normal leading-tight text-slate-700">1、首次使用请在设置中输入API令牌；</p>
+                    <p className="text-[12px] font-normal leading-tight text-slate-700">2、如遇到多次请求失败请联系客服；</p>
+                    <p className="text-[12px] font-normal leading-tight text-slate-700">3、欢迎提供优化建议。</p>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
           
           {error && <div className="bg-white border-4 border-brand-red p-3 text-brand-red font-normal text-[11px] brutalist-shadow-sm">ERROR: {error}</div>}
@@ -1747,31 +2330,6 @@ const App = () => {
         />
       )}
 
-      {activeModal === 'agent-login' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[400px] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative">
-            <ModalHeader title="代理登录 / AGENT LOGIN" icon={Shield} onClose={() => setActiveModal(null)} bgColor="bg-brand-blue" />
-            <div className="p-8 space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-bold uppercase">用户名 / USERNAME</label>
-                <input 
-                  type="text" 
-                  value={loginUser} 
-                  onChange={(e) => setLoginUser(e.target.value)} 
-                  onKeyDown={(e) => e.key === 'Enter' && handleAgentLogin()}
-                  className="w-full p-3 border-2 border-black font-bold text-lg outline-none brutalist-input"
-                  placeholder="请输入授权用户名"
-                  autoFocus
-                />
-              </div>
-              <button onClick={handleAgentLogin} className="w-full py-3 bg-brand-blue text-white border-2 border-black font-bold text-xl brutalist-shadow-sm hover:translate-y-1 hover:shadow-none transition-all uppercase tracking-tighter italic">
-                进入专区 / ENTER
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {activeModal === 'announcement' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-[550px] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative">
@@ -1792,17 +2350,9 @@ const App = () => {
                         功能更新
                     </h3>
                     <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
-                        1、sora 2生成后的视频支持编辑 (Video Editing Support)。
-                    </p>
-                 </div>
-
-                 <div className="bg-[#f0fdf4] border-2 border-black p-4 brutalist-shadow-sm transition-transform hover:-translate-y-1">
-                    <h3 className="font-bold text-lg mb-2 italic uppercase flex items-center gap-2">
-                        <span className="bg-brand-green text-black px-2 py-0.5 text-xs border border-black">NEW ZONE</span>
-                        代理专区
-                    </h3>
-                    <p className="text-sm font-bold text-slate-700 leading-relaxed italic">
-                        2、代理专区，新增推广策略，助力代理多多开单。
+                        1、新增 Kling Motion Control (动作迁移) 模型。<br/>
+                        2、支持 sora 2 视频编辑。<br/>
+                        3、新增AI智能助手。
                     </p>
                  </div>
               </div>
@@ -1884,7 +2434,7 @@ const App = () => {
                           招募优质API代理
                       </h4>
                       <p className="text-xs font-bold text-slate-500 italic px-4 leading-relaxed">
-                          名额有限，待遇从优。欢迎拥有稳定客户资源的伙伴加入。
+                          名额有限，欢迎想通过AI创业的伙伴加入。
                       </p>
                   </div>
 
@@ -1948,8 +2498,9 @@ const App = () => {
                 {
                   category: '视频模型',
                   items: [
-                    { m: 'VEO 3.1 FAST', p: '0.11元/次' },
-                    { m: 'VEO 3.1 PRO', p: '2.45元/次' },
+                    { m: 'Kling Motion Ctrl', p: '0.595元/次' },
+                    { m: 'VEO 3.1 FAST', p: '0.11元/条' },
+                    { m: 'VEO 3.1 PRO', p: '2.45元/条' },
                     { m: 'Jimeng Video 3.0', p: '0.266元/条' },
                     { m: 'Sora 2', p: '0.08元/条' },
                     { m: 'Sora 2 Pro', p: '2.52元/条' },
@@ -2098,220 +2649,6 @@ const App = () => {
              </div>
            </div>
          </div>
-      )}
-
-      {activeModal === 'video-remix' && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-           <div className="w-[500px] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
-             <ModalHeader title="视频重绘 / VIDEO REMIX" icon={Edit} onClose={() => setActiveModal(null)} bgColor="bg-brand-red" />
-             <div className="p-8 space-y-4">
-                <div className="space-y-2">
-                    <p className="text-sm font-bold text-slate-500 uppercase italic">请输入新的提示词以编辑视频内容：</p>
-                    <textarea 
-                        value={remixPrompt} 
-                        onChange={(e) => setRemixPrompt(e.target.value)} 
-                        placeholder="描述您想如何修改这段视频..." 
-                        className="w-full h-32 p-3 border-2 border-black font-normal bg-slate-50 focus:bg-white focus:outline-none brutalist-input resize-none"
-                    />
-                </div>
-                <div className="p-4 bg-brand-cream border-2 border-black border-dashed flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5 text-brand-red flex-shrink-0"/>
-                    <p className="text-xs font-bold text-slate-700 italic">重绘将基于原视频生成新的内容，时长和比例将保持不变。</p>
-                </div>
-                <div className="flex gap-4 pt-4">
-                    <button onClick={() => setActiveModal(null)} className="flex-1 py-3 bg-white border-2 border-black font-bold uppercase hover:bg-slate-100 transition-colors brutalist-shadow-sm">取消</button>
-                    <button onClick={executeVideoRemix} disabled={!remixPrompt.trim()} className="flex-1 py-3 bg-brand-yellow border-2 border-black font-bold uppercase hover:translate-y-0.5 hover:shadow-none transition-all brutalist-shadow-sm disabled:opacity-50">开始重绘</button>
-                </div>
-             </div>
-           </div>
-         </div>
-      )}
-
-      {activeModal === 'library' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[1000px] max-w-full h-[85vh] bg-white border-4 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
-            <ModalHeader title="提示词库 / PROMPT LIBRARY" icon={Bookmark} onClose={() => setActiveModal(null)} bgColor="bg-brand-purple" />
-            <div className="flex-1 flex overflow-hidden">
-                {/* Sidebar */}
-                <div className="w-1/4 min-w-[200px] border-r-4 border-black bg-brand-cream overflow-y-auto p-4 space-y-2">
-                    <div className="flex justify-between items-center mb-2 pl-1">
-                        <div className="text-xs font-bold text-slate-500 uppercase">CATEGORIES</div>
-                        <button onClick={handleStartAddCategory} className="p-1 hover:bg-white border border-transparent hover:border-black rounded transition-all" title="Add Category">
-                             <Plus className="w-4 h-4 text-black"/>
-                        </button>
-                    </div>
-
-                    {/* New Category Input */}
-                    {isAddingCategory && (
-                        <div className="mb-3 relative animate-in slide-in-from-top-2 fade-in duration-200">
-                             <input 
-                                autoFocus
-                                value={newCategoryName}
-                                onChange={(e) => setNewCategoryName(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleSaveNewCategory();
-                                    if (e.key === 'Escape') setIsAddingCategory(false);
-                                }}
-                                className="w-full px-3 py-2 border-2 border-black font-bold text-sm bg-white focus:outline-none brutalist-shadow-sm pr-16"
-                                placeholder="New Category"
-                             />
-                             <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
-                                <button onClick={handleSaveNewCategory} className="p-1 hover:bg-green-100 text-green-600 rounded"><Check className="w-4 h-4"/></button>
-                                <button onClick={() => setIsAddingCategory(false)} className="p-1 hover:bg-red-100 text-red-600 rounded"><X className="w-4 h-4"/></button>
-                             </div>
-                        </div>
-                    )}
-                    
-                    <button 
-                        onClick={() => setSelectedCategory('全部')}
-                        className={`w-full text-left px-4 py-3 border-2 border-black font-bold text-sm uppercase transition-all flex items-center justify-between ${selectedCategory === '全部' ? 'bg-brand-purple text-white brutalist-shadow' : 'bg-white hover:bg-purple-100 brutalist-shadow-sm'}`}
-                    >
-                        <div className="flex items-center gap-2"><LayoutGrid className="w-4 h-4"/> 全部</div>
-                        <span className="text-xs opacity-70">{libraryPrompts.length}</span>
-                    </button>
-                    {categories.map(cat => (
-                        <div key={cat} className="group/cat relative mt-3">
-                            {renamingCat === cat ? (
-                                <input 
-                                    autoFocus
-                                    value={renameInput}
-                                    onChange={(e) => setRenameInput(e.target.value)}
-                                    onBlur={handleFinishRenameCat}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleFinishRenameCat();
-                                        if (e.key === 'Escape') setRenamingCat(null);
-                                    }}
-                                    className="w-full px-4 py-3 border-2 border-black font-bold text-sm uppercase bg-white focus:outline-none"
-                                />
-                            ) : (
-                                <div 
-                                    onClick={() => setSelectedCategory(cat)}
-                                    className={`w-full text-left px-4 py-3 border-2 border-black font-bold text-sm uppercase transition-all flex items-center justify-between cursor-pointer select-none ${selectedCategory === cat ? 'bg-brand-purple text-white brutalist-shadow' : 'bg-white hover:bg-purple-100 brutalist-shadow-sm'}`}
-                                    title="双击重命名 / Double click to rename"
-                                    onDoubleClick={() => handleStartRenameCat(cat)}
-                                >
-                                    <div className="flex items-center gap-2 truncate overflow-hidden">
-                                       <Folder className="w-4 h-4 flex-shrink-0"/> 
-                                       <span className="truncate">{cat}</span>
-                                    </div>
-                                    
-                                    {/* Delete Icon - Visible on hover */}
-                                    <div 
-                                        onClick={(e) => handleDeleteCategory(cat, e)}
-                                        className="opacity-0 group-hover/cat:opacity-100 p-1 hover:bg-brand-red hover:text-white rounded transition-all ml-2 flex-shrink-0"
-                                        title="删除分类"
-                                    >
-                                        <Trash2 className="w-4 h-4"/>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-
-                {/* Main Content */}
-                <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {libraryPrompts.filter(p => selectedCategory === '全部' || p.category === selectedCategory).length === 0 ? (
-                             <div className="col-span-full h-64 flex flex-col items-center justify-center text-slate-300 gap-4">
-                                <Bookmark className="w-16 h-16 opacity-20"/>
-                                <p className="font-bold text-xl uppercase italic tracking-tighter">No prompts found in this category</p>
-                            </div>
-                        ) : (
-                            libraryPrompts.filter(p => selectedCategory === '全部' || p.category === selectedCategory).map((p) => (
-                                <div 
-                                    key={p.id}
-                                    draggable={!editingLibraryId && selectedCategory === '全部'}
-                                    onDragStart={() => handleDragStart(libraryPrompts.indexOf(p))}
-                                    onDragOver={(e) => handleDragOver(e, libraryPrompts.indexOf(p))}
-                                    onDragEnd={handleDragEnd}
-                                    onClick={() => usePromptFromLibrary(p.text)}
-                                    className={`group relative bg-white border-2 border-black p-4 brutalist-shadow-sm hover:translate-y-[-2px] hover:shadow-md cursor-pointer transition-all flex flex-col gap-2 ${draggedPromptIdx === libraryPrompts.indexOf(p) ? 'opacity-40 border-dashed border-brand-purple scale-95' : ''} ${editingLibraryId === p.id ? 'ring-2 ring-brand-purple bg-brand-cream z-10' : ''}`}
-                                >
-                                    {editingLibraryId === p.id ? (
-                                    <div className="space-y-3" onClick={e => e.stopPropagation()}>
-                                        <input 
-                                            type="text" 
-                                            value={editingLibraryName} 
-                                            onChange={(e) => setEditingLibraryName(e.target.value)}
-                                            className="w-full p-2 border-2 border-black font-bold text-sm bg-white focus:outline-none"
-                                            placeholder="Name"
-                                        />
-                                        <div className="flex gap-2 items-center">
-                                            <Tag className="w-4 h-4 text-slate-500"/>
-                                            <input 
-                                                type="text" 
-                                                value={editingLibraryCategory} 
-                                                onChange={(e) => setEditingLibraryCategory(e.target.value)}
-                                                className="flex-1 p-2 border-2 border-black font-normal text-xs bg-white focus:outline-none"
-                                                placeholder="Category"
-                                                list="edit-category-suggestions"
-                                            />
-                                            <datalist id="edit-category-suggestions">
-                                                {categories.map(c => (
-                                                    <option key={c} value={c} />
-                                                ))}
-                                            </datalist>
-                                        </div>
-                                        <textarea 
-                                        value={editingLibraryText} 
-                                        onChange={(e) => setEditingLibraryText(e.target.value)} 
-                                        className="w-full p-2 border-2 border-black font-normal text-sm bg-white focus:outline-none brutalist-input leading-relaxed italic min-h-[100px]"
-                                        placeholder="Prompt text"
-                                        />
-                                        <div className="flex gap-2 justify-end">
-                                        <button onClick={(e) => handleCancelLibraryEdit(e)} className="px-3 py-1 bg-white border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase italic">取消</button>
-                                        <button onClick={(e) => handleSaveLibraryEdit(p.id, e)} className="px-3 py-1 bg-brand-green border-2 border-black font-bold text-xs brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all uppercase italic">保存</button>
-                                        </div>
-                                    </div>
-                                    ) : (
-                                        <>
-                                            <div className="flex justify-between items-start">
-                                                <h4 className="font-bold text-base truncate pr-2" title={p.name}>{p.name}</h4>
-                                            </div>
-                                            <p className="text-sm font-normal text-slate-600 leading-tight italic line-clamp-3">"{p.text}"</p>
-                                            
-                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-                                                 {!editingLibraryId && (
-                                                    <div className="text-slate-300 mr-2 cursor-grab active:cursor-grabbing self-center" title="拖动排序 (仅全部视图)">
-                                                        <GripVertical className="w-4 h-4"/>
-                                                    </div>
-                                                 )}
-                                                <button 
-                                                    onClick={(e) => handleStartLibraryEdit(p, e)}
-                                                    className="p-1.5 bg-brand-yellow text-black border border-black hover:bg-white transition-colors brutalist-shadow-sm"
-                                                    title="编辑"
-                                                >
-                                                    <Edit className="w-3 h-3"/>
-                                                </button>
-                                                <button 
-                                                    onClick={(e) => removePromptFromLibrary(p.id, e)}
-                                                    className="p-1.5 bg-brand-red text-white border border-black hover:bg-red-600 transition-colors brutalist-shadow-sm"
-                                                    title="删除"
-                                                >
-                                                    <Trash2 className="w-3 h-3"/>
-                                                </button>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            </div>
-            <div className="p-4 bg-brand-cream border-t-4 border-black flex justify-between items-center">
-                <p className="text-xs font-bold text-slate-500 italic uppercase">点击条目使用 | 在全部视图下拖动排序 | 右上角操作</p>
-                <button 
-                  onClick={() => { handleOpenSaveModal(); }} 
-                  disabled={!prompt.trim()}
-                  className="px-8 py-2.5 bg-black text-white border-2 border-black font-bold uppercase tracking-tighter italic text-sm brutalist-shadow-sm hover:translate-y-1 hover:shadow-none transition-all disabled:opacity-30 disabled:grayscale"
-                >
-                  保存当前输入 / SAVE CURRENT
-                </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {previewAsset && (
