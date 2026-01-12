@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -24,8 +23,13 @@
             animation: {
               'spin-slow': 'spin 4s linear infinite',
               'brutalist-pulse': 'brutalist-pulse 1.5s ease-in-out infinite',
+              'marquee': 'marquee 20s linear infinite',
             },
             keyframes: {
+              marquee: {
+                '0%': { transform: 'translateX(100%)' },
+                '100%': { transform: 'translateX(-100%)' }
+              },
               'brutalist-pulse': {
                 '0%, 100%': { 
                   transform: 'scale(1)',
