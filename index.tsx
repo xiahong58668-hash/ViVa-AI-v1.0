@@ -1574,9 +1574,7 @@ const App = () => {
 
   const handleSaveLibraryEdit = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const originalPrompt = libraryPrompts.find(p => p.id === id);
-    const oldCategory = originalPrompt?.category;
-
+    
     const updated = libraryPrompts.map(p => p.id === id ? { ...p, text: editingLibraryText, name: editingLibraryName, category: editingLibraryCategory } : p);
     setLibraryPrompts(updated);
     localStorage.setItem('viva_library_prompts', JSON.stringify(updated));
