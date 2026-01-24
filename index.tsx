@@ -3081,21 +3081,7 @@ const App = () => {
                                             </button>
                                             </div>
                                         ))}
-                                        {(() => {
-                                           let maxRefs = 4;
-                                           if (!isVideoMode) {
-                                               maxRefs = currentImageModel?.maxImages || 4;
-                                           } else {
-                                               if (selectedVideoModel === 'kling-avatar-image2video' || selectedVideoModel === 'kling-motion-control') {
-                                                   maxRefs = 1;
-                                               } else if (selectedVideoModel === 'veo_3_1-fast-components-4K') {
-                                                   maxRefs = 3;
-                                               } else {
-                                                   maxRefs = (selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1;
-                                               }
-                                           }
-                                           return referenceImages.length < maxRefs;
-                                        })() && (
+                                        {((!isVideoMode ? referenceImages.length < (currentImageModel?.maxImages || 4) : referenceImages.length < (selectedVideoModel === 'kling-avatar-image2video' || selectedVideoModel === 'kling-motion-control' ? 1 : (selectedVideoModel === 'veo_3_1-fast-components-4K' ? 3 : (selectedVideoModel.startsWith('veo') || selectedVideoModel.startsWith('grok')) ? 2 : 1)))) && (
                                             <label className="w-24 h-24 border border-black flex items-center justify-center cursor-pointer bg-white brutalist-shadow-sm">
                                             <Plus className="w-6 h-6" /><input type="file" multiple={!isVideoMode} accept=".jpg, .jpeg, .png" className="hidden" onChange={handleImageUpload} />
                                             </label>
@@ -3164,6 +3150,7 @@ const App = () => {
                     })()
                 } : undefined}
             />
+            {/* ... (Existing logic for displaying options based on mode, kept identical) ... */}
             
                 {/* ... (The main generation configuration form) ... */}
                 <div className="p-3 bg-brand-cream border border-black brutalist-shadow-sm space-y-4">
@@ -3424,7 +3411,7 @@ const App = () => {
                       )}
                   </div>
                 </div>
-                
+              
           </section>
           )}
 
@@ -3754,19 +3741,19 @@ const App = () => {
                     className="flex-1 w-full p-4 border border-black font-normal text-xl bg-[#F8FAFC] focus:outline-none brutalist-input resize-none leading-relaxed italic" 
                 />
                 <div className="flex justify-between items-center pt-2">
-                    <div className="text-xs text-slate-500 font-normal italic">
-                        按 Ctrl + Enter 快速应用
+                    <div className="text-xs text-slate-500 font-normal uppercase italic">
+                        {(mainCategory === 'chat' ? chatInput : prompt).length} CHARS
                     </div>
                     <div className="flex gap-3">
-                        <button onClick={() => { setPrompt(prompt.trim()); setChatInput(chatInput.trim()); setActiveModal(null); }} className="px-6 py-2 bg-white border border-black hover:bg-slate-100 transition-colors font-normal text-sm uppercase">取消</button>
-                        <button onClick={() => { 
-                             if (mainCategory === 'chat') {
-                                 // Chat input is already bound
-                             } else {
-                                 // Prompt is already bound
-                             }
-                             setActiveModal(null); 
-                        }} className="px-6 py-2 bg-brand-yellow border border-black hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all font-bold text-sm uppercase">确认应用</button>
+                        <button onClick={() => mainCategory === 'chat' ? setChatInput('') : setPrompt('')} className="px-4 py-2 bg-white border border-black font-normal uppercase hover:bg-slate-100 transition-colors brutalist-shadow-sm text-xs">
+                            清空 / Clear
+                        </button>
+                        <button onClick={() => { navigator.clipboard.writeText(mainCategory === 'chat' ? chatInput : prompt); }} className="px-4 py-2 bg-white border border-black font-normal uppercase hover:bg-brand-yellow transition-colors brutalist-shadow-sm text-xs">
+                            复制 / Copy
+                        </button>
+                        <button onClick={() => setActiveModal(null)} className="px-6 py-2 bg-brand-red text-white border border-black font-normal uppercase hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all text-xs">
+                            完成 / Done
+                        </button>
                     </div>
                 </div>
             </div>
@@ -3775,126 +3762,139 @@ const App = () => {
       )}
 
       {activeModal === 'styles' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[800px] max-h-[85vh] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
-            <ModalHeader title="风格选择 / STYLE LIBRARY" icon={Palette} onClose={() => setActiveModal(null)} />
-            <div className="flex-1 overflow-y-auto p-6 min-h-0">
-               {renderStyleSection("艺术风格 / ART STYLES", STYLES.map(s => s.zh + " " + s.en), true)}
-               {isVideoMode && (
-                   <>
-                       {renderStyleSection("镜头运镜 / CAMERA MOVES", CAMERA_MOVES, true)}
-                       {renderStyleSection("拍摄视角 / SHOT TYPES", SHOT_TYPES, true)}
-                       {renderStyleSection("光影氛围 / LIGHTING & ATMOSPHERE", [...LIGHTING_STYLES, ...ATMOSPHERE_STYLES], true)}
-                   </>
-               )}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 md:p-4">
+          <div className="w-[900px] max-w-full bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col max-h-[85vh]">
+            <ModalHeader title="风格与镜头 / STYLES & CAMERA" icon={Palette} onClose={() => setActiveModal(null)} />
+            <div className="flex-1 p-4 md:p-5 overflow-y-auto no-scrollbar bg-[#f8fafc]">
+              
+              {renderStyleSection('艺术风格 (Art Styles)', STYLES.map(s => s.zh), false)}
+              
+              <div className="w-full border-t border-dashed border-slate-300 my-4"></div>
+
+              {renderStyleSection('镜头 (Camera)', CAMERA_MOVES)}
+              {renderStyleSection('运镜速度 (Speed)', CAMERA_SPEEDS)}
+              {renderStyleSection('景别 (Shot)', SHOT_TYPES)}
+              {renderStyleSection('光影 (Lighting)', LIGHTING_STYLES, true)}
+              {renderStyleSection('画面 (Composition)', COMPOSITION_STYLES, true)}
+              {renderStyleSection('氛围 (Atmosphere)', ATMOSPHERE_STYLES, true)}
             </div>
-            <div className="p-4 border-t-2 border-black bg-brand-cream flex justify-between items-center shrink-0">
-                <div className="text-sm font-normal">已选: {tempSelectedStyles.length} 项</div>
-                <div className="flex gap-3">
-                    <button onClick={() => { setTempSelectedStyles([]); setActiveModal(null); }} className="px-6 py-2 bg-white border border-black hover:bg-slate-100 transition-colors font-normal text-sm uppercase">取消</button>
-                    <button onClick={applyStyles} className="px-6 py-2 bg-brand-yellow border border-black hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all font-bold text-sm uppercase">确认应用</button>
-                </div>
+            <div className="p-3 border-t-2 border-black bg-brand-cream flex justify-end items-center flex-shrink-0">
+              <button onClick={applyStyles} className="px-6 py-2 bg-brand-red text-white border border-black font-normal uppercase tracking-tighter italic text-xs brutalist-shadow-sm hover:translate-y-1 hover:shadow-none transition-all">
+                完成 / DONE
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* ... (Library, Save Confirm, Video Remix, Preview Modals remain unchanged) ... */}
       {activeModal === 'library' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[900px] h-[85vh] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
+          <div className="w-[1000px] h-[80vh] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
             <ModalHeader title="提示词库 / PROMPT LIBRARY" icon={Bookmark} onClose={() => setActiveModal(null)} />
-            <div className="flex-1 flex min-h-0">
-                {/* Categories Sidebar */}
-                <div className="w-48 border-r border-black bg-slate-50 overflow-y-auto p-2 space-y-1">
-                    <button 
-                        onClick={() => setSelectedCategory('全部')}
-                        className={`w-full text-left px-3 py-2 text-sm font-normal border border-transparent hover:bg-white hover:border-black transition-all ${selectedCategory === '全部' ? 'bg-brand-yellow border-black font-bold' : ''}`}
-                    >
-                        全部 ({libraryPrompts.length})
-                    </button>
-                    {categories.map(cat => (
-                        <div key={cat} className="group relative">
+            
+            <div className="flex-1 flex overflow-hidden min-h-0">
+                {/* Sidebar */}
+                <div className="w-64 bg-slate-50 border-r-2 border-black p-4 flex flex-col gap-2 overflow-y-auto">
+                  {isAddingCategory ? (
+                      <div className="flex gap-1 mb-2">
+                        <input autoFocus value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} className="w-full border border-black p-1 text-xs outline-none" placeholder="新分类名称..." onKeyDown={e => e.key === 'Enter' && handleSaveNewCategory()} />
+                        <button onClick={handleSaveNewCategory} className="bg-brand-green border border-black p-1 hover:bg-green-400 transition-colors"><Check className="w-4 h-4"/></button>
+                      </div>
+                  ) : (
+                      <button onClick={handleStartAddCategory} className="w-full py-2 bg-white border border-black flex items-center justify-center gap-1 font-normal text-xs hover:bg-brand-yellow transition-all brutalist-shadow-sm hover:shadow-none hover:translate-y-0.5 mb-2 uppercase">
+                        <Plus className="w-3 h-3"/> 新建分类
+                      </button>
+                  )}
+
+                  <div className="space-y-1">
+                      <button onClick={() => setSelectedCategory('全部')} className={`w-full text-left px-3 py-2 font-normal text-sm border transition-all flex justify-between items-center ${selectedCategory === '全部' ? 'bg-brand-yellow text-black border-black' : 'bg-transparent border-transparent hover:bg-white hover:border-black'}`}>
+                        <span>全部 (ALL)</span>
+                        {selectedCategory === '全部' && <Check className="w-3 h-3"/>}
+                      </button>
+                      {categories.map(cat => (
+                        <div key={cat} onClick={() => setSelectedCategory(cat)} className={`group w-full text-left px-3 py-2 font-normal text-sm border transition-all flex justify-between items-center cursor-pointer ${selectedCategory === cat ? 'bg-brand-yellow text-black border-black' : 'bg-transparent border-transparent hover:bg-white hover:border-black'}`}>
                             {renamingCat === cat ? (
-                                <input 
-                                    autoFocus
-                                    value={renameInput}
-                                    onChange={(e) => setRenameInput(e.target.value)}
-                                    onBlur={handleFinishRenameCat}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleFinishRenameCat()}
-                                    className="w-full px-2 py-1.5 text-sm border border-black outline-none"
-                                />
+                                <input autoFocus value={renameInput} onClick={e => e.stopPropagation()} onChange={e => setRenameInput(e.target.value)} onBlur={handleFinishRenameCat} onKeyDown={e => e.key === 'Enter' && handleFinishRenameCat()} className="w-full bg-white text-black text-xs p-1 outline-none" />
                             ) : (
-                                <button 
-                                    onClick={() => setSelectedCategory(cat)}
-                                    className={`w-full text-left px-3 py-2 text-sm font-normal border border-transparent hover:bg-white hover:border-black transition-all truncate pr-8 ${selectedCategory === cat ? 'bg-brand-yellow border-black font-bold' : ''}`}
-                                >
-                                    {cat}
-                                </button>
+                                <span className="truncate flex-1">{cat}</span>
                             )}
-                            {cat !== '默认' && renamingCat !== cat && (
-                                <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex gap-1">
-                                    <button onClick={(e) => { e.stopPropagation(); handleStartRenameCat(cat); }} className="p-1 hover:bg-black hover:text-white rounded"><Edit className="w-3 h-3"/></button>
-                                    <button onClick={(e) => handleDeleteCategory(cat, e)} className="p-1 hover:bg-red-500 hover:text-white rounded"><Trash2 className="w-3 h-3"/></button>
+                            
+                            {renamingCat !== cat && (
+                                <div className={`flex gap-1 ${selectedCategory === cat ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                                  <button onClick={(e) => { e.stopPropagation(); handleStartRenameCat(cat); }} className="hover:text-brand-blue p-0.5"><Edit className="w-3 h-3"/></button>
+                                  <button onClick={(e) => handleDeleteCategory(cat, e)} className="hover:text-brand-red p-0.5"><Trash2 className="w-3 h-3"/></button>
                                 </div>
                             )}
                         </div>
-                    ))}
-                    {isAddingCategory ? (
-                        <input 
-                            autoFocus
-                            value={newCategoryName}
-                            onChange={(e) => setNewCategoryName(e.target.value)}
-                            onBlur={handleSaveNewCategory}
-                            onKeyDown={(e) => e.key === 'Enter' && handleSaveNewCategory()}
-                            placeholder="新分类名称"
-                            className="w-full px-3 py-2 text-sm border border-black outline-none"
-                        />
-                    ) : (
-                        <button onClick={() => setIsAddingCategory(true)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-500 hover:text-black hover:bg-slate-100 transition-colors">
-                            <Plus className="w-4 h-4" /> 新建分类
-                        </button>
-                    )}
+                      ))}
+                  </div>
                 </div>
 
-                {/* Main List */}
-                <div className="flex-1 overflow-y-auto p-4 bg-[#F8FAFC]">
-                    <div className="grid grid-cols-2 gap-3">
-                        {libraryPrompts.filter(p => selectedCategory === '全部' || p.category === selectedCategory).map((p, idx) => (
-                            <div 
+                {/* Main Content */}
+                <div className="flex-1 bg-white p-6 overflow-y-auto">
+                    <div className="flex flex-col gap-3">
+                        {libraryPrompts
+                          .filter(p => selectedCategory === '全部' || p.category === selectedCategory)
+                          .map((p) => {
+                            const isEditing = editingLibraryId === p.id;
+                            const globalIndex = libraryPrompts.indexOf(p); // Use absolute index for drag
+                            return (
+                              <div 
                                 key={p.id}
                                 draggable={!editingLibraryId && selectedCategory === '全部'}
-                                onDragStart={() => handleDragStart(idx)}
-                                onDragOver={(e) => handleDragOver(e, idx)}
+                                onDragStart={() => handleDragStart(globalIndex)}
+                                onDragOver={(e) => handleDragOver(e, globalIndex)}
                                 onDragEnd={handleDragEnd}
-                                onClick={() => usePromptFromLibrary(p.text)}
-                                className={`bg-white border border-black p-3 hover:shadow-md cursor-pointer group relative transition-all ${draggedPromptIdx === idx ? 'opacity-50' : ''}`}
-                            >
-                                {editingLibraryId === p.id ? (
-                                    <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-                                        <input value={editingLibraryName} onChange={(e) => setEditingLibraryName(e.target.value)} className="w-full text-sm font-bold border-b border-black outline-none pb-1" placeholder="标题" />
-                                        <textarea value={editingLibraryText} onChange={(e) => setEditingLibraryText(e.target.value)} className="w-full text-xs h-20 border border-slate-200 resize-none outline-none p-1" placeholder="内容" />
-                                        <input value={editingLibraryCategory} onChange={(e) => setEditingLibraryCategory(e.target.value)} className="w-full text-xs border-b border-slate-200 outline-none pb-1 text-slate-500" placeholder="分类" list="category-list" />
-                                        <datalist id="category-list">{categories.map(c => <option key={c} value={c} />)}</datalist>
-                                        <div className="flex justify-end gap-2">
-                                            <button onClick={(e) => handleCancelLibraryEdit(e)} className="text-xs underline">取消</button>
-                                            <button onClick={(e) => handleSaveLibraryEdit(p.id, e)} className="text-xs bg-black text-white px-2 py-1">保存</button>
-                                        </div>
+                                className={`border border-black p-4 transition-all ${isEditing ? 'bg-brand-cream ring-4 ring-black/10' : 'bg-white hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]'}`}
+                              >
+                                {isEditing ? (
+                                    <div className="space-y-3" onClick={e => e.stopPropagation()}>
+                                      <div className="flex gap-2">
+                                          <input value={editingLibraryName} onChange={e => setEditingLibraryName(e.target.value)} className="flex-1 font-normal border-b border-black bg-transparent outline-none pb-1 text-sm" placeholder="名称" />
+                                          <select value={editingLibraryCategory} onChange={e => setEditingLibraryCategory(e.target.value)} className="border border-black text-xs p-1 font-normal outline-none">
+                                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                          </select>
+                                      </div>
+                                      <textarea value={editingLibraryText} onChange={e => setEditingLibraryText(e.target.value)} className="w-full h-24 text-xs border border-black p-2 resize-none outline-none focus:bg-white" placeholder="提示词..." />
+                                      <div className="flex items-center gap-2 justify-end">
+                                          <button onClick={handleCancelLibraryEdit} className="px-3 py-1 bg-white border border-black text-xs font-normal hover:bg-slate-100">取消</button>
+                                          <button onClick={(e) => handleSaveLibraryEdit(p.id, e)} className="px-4 py-1 bg-brand-green border border-black text-xs font-normal hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all">保存</button>
+                                      </div>
                                     </div>
                                 ) : (
-                                    <>
-                                        <h4 className="font-bold text-sm mb-1 truncate pr-6">{p.name}</h4>
-                                        <p className="text-xs text-slate-500 line-clamp-3 leading-relaxed">{p.text}</p>
-                                        <div className="mt-2 flex items-center justify-between">
-                                            <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500">{p.category}</span>
-                                        </div>
-                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white">
-                                            <button onClick={(e) => handleStartLibraryEdit(p, e)} className="p-1 hover:bg-slate-100 border border-transparent hover:border-black transition-all"><Edit className="w-3 h-3"/></button>
-                                            <button onClick={(e) => removePromptFromLibrary(p.id, e)} className="p-1 hover:bg-red-50 hover:text-red-500 border border-transparent hover:border-red-500 transition-all"><Trash2 className="w-3 h-3"/></button>
-                                        </div>
-                                    </>
+                                    <div className="flex gap-4">
+                                      {selectedCategory === '全部' && (
+                                          <div className="cursor-grab active:cursor-grabbing flex flex-col justify-center text-slate-300 hover:text-black transition-colors">
+                                            <GripVertical className="w-5 h-5"/>
+                                          </div>
+                                      )}
+                                      <div className="flex-1 min-w-0 space-y-2">
+                                          <div className="flex justify-between items-start">
+                                            <h4 className="font-normal text-base truncate pr-2">{p.name}</h4>
+                                            <span className="text-[10px] font-normal bg-slate-100 px-1.5 py-0.5 border border-black uppercase whitespace-nowrap">{p.category}</span>
+                                          </div>
+                                          <p className="text-sm text-slate-500 line-clamp-2 cursor-pointer hover:text-black transition-colors leading-relaxed" onClick={() => usePromptFromLibrary(p.text)} title={p.text}>{p.text}</p>
+                                          
+                                          <div className="flex items-center gap-4 pt-1">
+                                            <button onClick={() => usePromptFromLibrary(p.text)} className="flex items-center gap-1 text-[10px] font-normal text-slate-400 hover:text-brand-green uppercase transition-colors"><Check className="w-3 h-3"/> 使用</button>
+                                            <button onClick={() => { navigator.clipboard.writeText(p.text); }} className="flex items-center gap-1 text-[10px] font-normal text-slate-400 hover:text-brand-blue uppercase transition-colors"><Copy className="w-3 h-3"/> 复制</button>
+                                            <button onClick={(e) => handleStartLibraryEdit(p, e)} className="flex items-center gap-1 text-[10px] font-normal text-slate-400 hover:text-brand-yellow uppercase transition-colors"><Edit className="w-3 h-3"/> 编辑</button>
+                                            <button onClick={(e) => removePromptFromLibrary(p.id, e)} className="flex items-center gap-1 text-[10px] font-normal text-slate-400 hover:text-brand-red uppercase transition-colors"><Trash2 className="w-3 h-3"/> 删除</button>
+                                          </div>
+                                      </div>
+                                    </div>
                                 )}
+                              </div>
+                            );
+                        })}
+                        
+                        {libraryPrompts.filter(p => selectedCategory === '全部' || p.category === selectedCategory).length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-64 text-slate-300 border-2 border-dashed border-slate-200">
+                                <Bookmark className="w-12 h-12 mb-2 opacity-50"/>
+                                <p className="font-normal text-lg uppercase italic">这里空空如也</p>
                             </div>
-                        ))}
+                        )}
                     </div>
                 </div>
             </div>
@@ -3904,111 +3904,150 @@ const App = () => {
 
       {activeModal === 'save-prompt-confirm' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[400px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative">
-            <ModalHeader title="保存提示词 / SAVE" icon={Save} onClose={() => setActiveModal(null)} />
-            <div className="p-6 space-y-4">
-                <div className="space-y-1">
-                    <label className="text-sm font-bold uppercase">名称 / NAME</label>
-                    <input value={saveName} onChange={(e) => setSaveName(e.target.value)} className="w-full p-2 border border-black outline-none" placeholder="为这段提示词起个名..." />
-                </div>
-                <div className="space-y-1 relative">
-                    <label className="text-sm font-bold uppercase">分类 / CATEGORY</label>
+           <div className="w-[400px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative">
+              <ModalHeader title="保存提示词" icon={Save} onClose={() => setActiveModal(null)} />
+              <div className="p-6 space-y-4">
+                 <div className="space-y-1">
+                    <label className="font-normal text-xs uppercase block">Name (名称)</label>
+                    <input value={saveName} onChange={e => setSaveName(e.target.value)} className="w-full border border-black p-2 outline-none focus:bg-brand-cream text-sm font-normal" placeholder="给提示词起个名字..." autoFocus />
+                 </div>
+                 <div className="space-y-1 relative">
+                    <label className="font-normal text-xs uppercase block">Category (分类)</label>
                     <div className="relative">
                         <input 
                             value={saveCategory} 
-                            onChange={(e) => { setSaveCategory(e.target.value); setShowSaveCategoryDropdown(true); }}
+                            onChange={e => { setSaveCategory(e.target.value); setShowSaveCategoryDropdown(true); }} 
                             onFocus={() => setShowSaveCategoryDropdown(true)}
-                            onBlur={() => setTimeout(() => setShowSaveCategoryDropdown(false), 200)}
-                            className="w-full p-2 border border-black outline-none" 
-                            placeholder="选择或输入新分类..." 
+                            className="w-full border border-black p-2 outline-none focus:bg-brand-cream text-sm font-normal" 
+                            placeholder="输入或选择分类..." 
                         />
                         {showSaveCategoryDropdown && (
-                            <div className="absolute top-full left-0 right-0 bg-white border border-black border-t-0 max-h-40 overflow-y-auto z-10">
-                                {categories.filter(c => c.includes(saveCategory)).map(c => (
-                                    <div key={c} onMouseDown={() => setSaveCategory(c)} className="px-3 py-2 hover:bg-brand-cream cursor-pointer text-sm">
+                            <div className="absolute top-full left-0 right-0 border border-black border-t-0 bg-white max-h-32 overflow-y-auto z-10 shadow-lg">
+                                {categories.filter(c => c.toLowerCase().includes(saveCategory.toLowerCase())).map(c => (
+                                    <div key={c} onClick={() => { setSaveCategory(c); setShowSaveCategoryDropdown(false); }} className="p-2 hover:bg-brand-yellow cursor-pointer text-xs font-normal border-b border-slate-100 last:border-0">
                                         {c}
                                     </div>
                                 ))}
+                                {saveCategory && !categories.includes(saveCategory) && (
+                                    <div onClick={() => setShowSaveCategoryDropdown(false)} className="p-2 hover:bg-brand-green cursor-pointer text-xs font-normal text-brand-green">
+                                        + 新建 "{saveCategory}"
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
-                </div>
-                <button onClick={confirmSavePrompt} className="w-full py-3 bg-brand-yellow border border-black font-bold uppercase brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">确认保存</button>
-            </div>
-          </div>
+                 </div>
+                 <button onClick={confirmSavePrompt} className="w-full py-3 bg-black text-white font-normal uppercase hover:bg-brand-yellow hover:text-black border-2 border-black transition-colors brutalist-shadow-sm hover:shadow-none hover:translate-y-0.5 text-sm mt-2">
+                    确认保存 / CONFIRM
+                 </button>
+              </div>
+           </div>
         </div>
       )}
-      
+
       {activeModal === 'video-remix' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-            <div className="w-[500px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative">
-                <ModalHeader title="视频重绘 / REMIX" icon={RefreshCw} onClose={() => setActiveModal(null)} />
-                <div className="p-6 space-y-4">
-                    <div className="text-sm text-slate-500 font-normal">
-                        基于视频 <strong>{remixingAsset?.id.slice(-6)}</strong> 进行微调或重绘。
+           <div className="w-[500px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative">
+              <ModalHeader title="视频重绘 / VIDEO REMIX" icon={Wand2} onClose={() => setActiveModal(null)} bgColor="bg-brand-blue" />
+              <div className="p-6 space-y-4">
+                 <p className="text-xs font-normal text-slate-500 italic uppercase">Modify the prompt to remix the video.</p>
+                 <textarea 
+                    value={remixPrompt} 
+                    onChange={e => setRemixPrompt(e.target.value)} 
+                    className="w-full h-56 border border-black p-3 outline-none focus:bg-brand-cream resize-none font-normal text-base" 
+                    placeholder="输入新的提示词..."
+                    autoFocus
+                 />
+                 <button onClick={executeVideoRemix} className="w-full py-3 bg-brand-red text-white font-normal uppercase hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm border border-black transition-all text-sm">
+                    开始重绘 / REMIX
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {previewAsset && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setPreviewAsset(null)}>
+            <div className="max-w-[95vw] max-h-[95vh] w-auto h-auto bg-white border-2 border-black brutalist-shadow flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                
+                <div className="h-14 bg-brand-yellow border-b-2 border-black flex justify-between items-center px-4 shrink-0">
+                    <span className="font-medium text-lg uppercase italic tracking-wider">PREVIEW ASSET</span>
+                    <button onClick={() => setPreviewAsset(null)} className="w-8 h-8 bg-brand-red text-white border border-black flex items-center justify-center hover:bg-black transition-colors brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="flex-1 bg-slate-100 p-4 md:p-8 flex items-center justify-center min-h-[300px] overflow-hidden relative">
+                     {previewAsset.type === 'video' ? (
+                         <video src={previewAsset.url} controls autoPlay playsInline className="max-w-full max-h-[70vh] w-auto h-auto object-contain shadow-xl border-2 border-black bg-black" />
+                     ) : previewAsset.type === 'image' ? (
+                         <img src={previewAsset.url} className="max-w-full max-h-[70vh] w-auto h-auto object-contain shadow-xl border-2 border-black bg-white" />
+                     ) : (
+                         <div className="w-[500px] p-10 bg-white border-2 border-black brutalist-shadow flex flex-col items-center">
+                              <div className="w-24 h-24 bg-brand-purple rounded-full flex items-center justify-center border-2 border-black mb-6">
+                                  <AudioLines className="w-12 h-12 text-white" />
+                              </div>
+                              <audio src={previewAsset.url} controls className="w-full" />
+                         </div>
+                     )}
+                </div>
+
+                <div className="p-6 bg-white border-t-2 border-black flex flex-col md:flex-row gap-4 justify-between items-end md:items-center shrink-0">
+                    <div className="flex-1 min-w-0 space-y-2">
+                        <div className="space-y-1">
+                            <p className="text-[10px] font-normal text-slate-400 uppercase tracking-widest">PROMPT:</p>
+                            <p className="text-sm font-normal leading-relaxed line-clamp-3">"{previewAsset.prompt}"</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                             <span className="text-xs font-medium text-brand-red uppercase tracking-wider">{previewAsset.modelName}</span>
+                             <span className="text-[10px] font-normal text-slate-300">|</span>
+                             <span className="text-xs font-normal text-brand-red">{previewAsset.durationText || previewAsset.genTimeLabel}</span>
+                        </div>
                     </div>
-                    <textarea 
-                        value={remixPrompt} 
-                        onChange={(e) => setRemixPrompt(e.target.value)} 
-                        className="w-full h-32 p-3 border border-black outline-none resize-none"
-                        placeholder="输入新的提示词进行重绘..."
-                    />
-                    <button onClick={executeVideoRemix} className="w-full py-3 bg-brand-yellow border border-black font-bold uppercase brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
-                        开始重绘
+
+                    <div className="flex gap-3 shrink-0">
+                        <button onClick={() => setPreviewAsset(null)} className="px-6 py-3 bg-white border border-black font-normal uppercase hover:bg-slate-100 transition-colors text-sm brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
+                            关闭
+                        </button>
+                        <button onClick={(e) => handleAssetDownload(previewAsset, e)} className="px-6 py-3 bg-brand-red text-white border border-black font-normal uppercase hover:bg-black transition-colors text-sm flex items-center gap-2 brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
+                             DOWNLOAD
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+      )}
+
+      {previewRefImage && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setPreviewRefImage(null)}>
+            <div className="max-w-[95vw] max-h-[95vh] w-auto h-auto bg-white border-2 border-black brutalist-shadow flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                <div className="h-14 bg-brand-yellow border-b-2 border-black flex justify-between items-center px-4 shrink-0">
+                    <span className="font-medium text-lg uppercase italic tracking-wider">PREVIEW REFERENCE</span>
+                    <button onClick={() => setPreviewRefImage(null)} className="w-8 h-8 bg-brand-red text-white border border-black flex items-center justify-center hover:bg-black transition-colors brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="flex-1 bg-slate-100 p-4 md:p-8 flex items-center justify-center min-h-[300px] overflow-hidden relative">
+                     <img src={previewRefImage.data.startsWith('http') ? previewRefImage.data : `data:${previewRefImage.mimeType};base64,${previewRefImage.data}`} className="max-w-full max-h-[70vh] w-auto h-auto object-contain shadow-xl border-2 border-black bg-white" />
+                </div>
+                
+                <div className="p-4 bg-white border-t-2 border-black flex justify-end">
+                     <button onClick={() => setPreviewRefImage(null)} className="px-6 py-2 bg-white border border-black font-normal uppercase hover:bg-slate-100 transition-colors text-sm brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
+                        关闭 / CLOSE
                     </button>
                 </div>
             </div>
         </div>
       )}
 
-      {/* Preview Asset Modal */}
-      {previewAsset && (
-         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4" onClick={() => setPreviewAsset(null)}>
-             <div className="relative max-w-7xl max-h-[90vh] w-full flex flex-col items-center justify-center" onClick={(e) => e.stopPropagation()}>
-                 <button onClick={() => setPreviewAsset(null)} className="absolute -top-12 right-0 text-white hover:text-brand-yellow transition-colors"><X className="w-8 h-8"/></button>
-                 
-                 {previewAsset.type === 'video' ? (
-                     <video src={previewAsset.url} controls autoPlay className="max-w-full max-h-[85vh] border-2 border-white shadow-2xl" />
-                 ) : previewAsset.type === 'audio' ? (
-                     <div className="bg-white p-10 rounded-xl flex flex-col items-center gap-6 min-w-[300px]">
-                         <div className="w-32 h-32 bg-brand-purple rounded-full flex items-center justify-center animate-pulse">
-                             <AudioLines className="w-16 h-16 text-white" />
-                         </div>
-                         <audio src={previewAsset.url} controls className="w-full" />
-                         <div className="text-center">
-                             <p className="font-bold text-lg">{previewAsset.prompt.slice(0, 30)}...</p>
-                             <p className="text-sm text-slate-500">{previewAsset.modelName}</p>
-                         </div>
-                     </div>
-                 ) : (
-                     <img src={previewAsset.url} className="max-w-full max-h-[85vh] object-contain border-2 border-white shadow-2xl" />
-                 )}
-                 
-                 <div className="mt-4 flex gap-4">
-                     <button onClick={() => handleAssetDownload(previewAsset, {} as any)} className="bg-white text-black px-6 py-2 rounded-full font-bold hover:bg-brand-yellow transition-colors flex items-center gap-2">
-                         <Download className="w-4 h-4" /> 下载
-                     </button>
-                     <div className="bg-black/50 text-white px-4 py-2 rounded-full text-sm backdrop-blur-sm">
-                         {previewAsset.modelName} | {previewAsset.genTimeLabel}
-                     </div>
-                 </div>
-             </div>
-         </div>
-      )}
-
-      {/* Reference Image Preview */}
-      {previewRefImage && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4" onClick={() => setPreviewRefImage(null)}>
-             <div className="relative max-w-5xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
-                 <button onClick={() => setPreviewRefImage(null)} className="absolute -top-10 right-0 text-white hover:text-brand-yellow transition-colors"><X className="w-8 h-8"/></button>
-                 <img src={previewRefImage.data.startsWith('http') ? previewRefImage.data : `data:${previewRefImage.mimeType};base64,${previewRefImage.data}`} className="max-w-full max-h-[85vh] object-contain border-2 border-white shadow-2xl" />
-             </div>
-          </div>
-      )}
-
     </div>
   );
 };
 
-const root = createRoot(document.getElementById('root')!);
-root.render(<App />);
+const container = document.getElementById('root');
+if (container) {
+  const root = createRoot(container);
+  root.render(<App />);
+}
