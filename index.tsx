@@ -25,7 +25,7 @@ declare var process: {
 };
 
 type ModalType = 'settings' | 'links' | 'usage' | 'price' | 'support' | 'edit-prompt' | 'styles' | 'library' | 'save-prompt-confirm' | 'video-remix' | 'announcement' | null;
-type MainCategory = 'image' | 'video' | 'proxy' | 'audio' | 'music' | 'chat' | 'announcement';
+type MainCategory = 'image' | 'video' | 'proxy' | 'audio' | 'chat' | 'announcement';
 
 interface AppConfig {
   baseUrl: string;
@@ -45,6 +45,8 @@ interface GeneratedAsset {
   status?: 'queued' | 'processing' | 'completed' | 'failed' | 'loading';
   taskId?: string;
   config?: any;
+  coverUrl?: string;
+  title?: string;
 }
 
 interface ReferenceImage {
@@ -216,7 +218,8 @@ const VIDEO_MODELS = [
     desc: '标清视频', 
     supportedAspectRatios: ['9:16', '16:9', '2:3', '3:2', '1:1'],
     options: [
-      {s: '6', q: '标清'}
+      {s: '6', q: '标清'},
+      {s: '10', q: '标清', modelIdOverride: 'grok-video-3-10s'}
     ] 
   },
   { 
@@ -447,7 +450,7 @@ const findImageUrlInObject = (obj: any): string | null => {
 // --- IndexedDB ---
 const DB_NAME = 'viva_ai_db';
 const STORE_NAME = 'assets';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -1002,7 +1005,7 @@ const PRICE_DATA = [
     items: [
       { m: 'Sora 2', p: '0.08元/条' },
       { m: 'VEO 3.1 Fast', p: '0.11元/条' },
-      { m: 'Grok Video 3', p: '0.14元/条' },
+      { m: 'Grok Video 3', p: '6s 0.14元/条，10s 0.40元/条' },
       { m: 'VEO 3.1 Fast 4K', p: '0.181元/条' },
       { m: 'VEO 3.1 Mix 4K (多图融合)', p: '0.361元/条' },
       { m: 'KLING Control Std (动作转移)', p: '0.595元/秒' },
@@ -1139,7 +1142,6 @@ const App = () => {
   const isVideoMode = mainCategory === 'video';
   const isProxyMode = mainCategory === 'proxy';
   const isAudioMode = mainCategory === 'audio';
-  const isMusicMode = mainCategory === 'music';
   const isChatMode = mainCategory === 'chat';
   const isAnnouncementMode = mainCategory === 'announcement';
   
@@ -1152,7 +1154,7 @@ const App = () => {
 
   // ... (useEffects for models remain same) ...
   useEffect(() => {
-    if (!isVideoMode && !isProxyMode && !isAudioMode && !isMusicMode && !isChatMode && !isAnnouncementMode) {
+    if (!isVideoMode && !isProxyMode && !isAudioMode && !isChatMode && !isAnnouncementMode) {
       const model = MODELS.find(m => m.id === selectedModel);
       if (model) {
         if (!model.supportedAspectRatios.includes(aspectRatio)) setAspectRatio(model.supportedAspectRatios[0]);
@@ -1211,14 +1213,16 @@ const App = () => {
 
   useEffect(() => {
     getAllAssetsFromDB().then(assets => {
-        const sorted = assets.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        // Filter out music assets to avoid issues
+        const validAssets = assets.filter((a: any) => a.type !== 'music');
+        const sorted = validAssets.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setGeneratedAssets(sorted);
         sorted.filter(a => a.type === 'video' && a.modelId !== 'kling-video' && (a.status === 'queued' || a.status === 'processing'))
               .forEach(v => startVideoPolling(v.taskId!, v.id, v.timestamp, v.modelId));
         
         sorted.filter(a => a.type === 'image' && a.modelId === 'kling-image-o1' && (a.status === 'queued' || a.status === 'processing'))
               .forEach(v => startKlingImagePolling(v.taskId!, v.id, v.timestamp));
-
+        
         sorted.filter(a => a.type === 'video' && (a.modelId === 'kling-video' || a.modelId === 'kling-avatar-image2video' || a.modelId === 'kling-motion-control') && (a.status === 'queued' || a.status === 'processing'))
               .forEach(v => {
                   let endpointType = 'text2video';
@@ -1290,6 +1294,7 @@ const App = () => {
   };
   
   // ... (Polling functions startKlingImagePolling, startKlingVideoPolling, startVideoPolling same)
+
   const startKlingImagePolling = (taskId: string, assetId: string, startTime: number) => {
     const interval = setInterval(async () => {
         let key = (configRef.current.apiKey || safeEnvKey).trim();
@@ -2053,6 +2058,13 @@ const App = () => {
         tOptIdx = 0;
     }
 
+    // Determine actual API model ID
+    let apiModelId = tModelId;
+    const selectedOption = modelDef?.options?.[tOptIdx] as any;
+    if (selectedOption?.modelIdOverride) {
+        apiModelId = selectedOption.modelIdOverride;
+    }
+
     const tSyncAudio = overrideConfig?.isSyncAudio ?? isSyncAudio;
     const tRefs = overrideConfig?.referenceImages ?? referenceImages;
     const tRefVideo = overrideConfig?.referenceVideo ?? referenceVideo;
@@ -2078,11 +2090,11 @@ const App = () => {
     try {
         const createOne = async (pId: string) => {
             let response;
-            const isVeoModel = tModelId.startsWith('veo') && !tModelId.includes('4K');
-            const isGrokModel = tModelId.startsWith('grok');
-            const isJimengModel = tModelId.startsWith('jimeng');
+            const isVeoModel = apiModelId.startsWith('veo') && !apiModelId.includes('4K');
+            const isGrokModel = apiModelId.startsWith('grok');
+            const isJimengModel = apiModelId.startsWith('jimeng');
             
-            if (tModelId === 'kling-motion-control') {
+            if (apiModelId === 'kling-motion-control') {
                 if (tRefs.length === 0) throw new Error("请上传一张参考图片 (Image Required)");
                 if (!tRefVideo) throw new Error("请上传参考视频 (Video Required)");
 
@@ -2128,7 +2140,7 @@ const App = () => {
                 return;
             }
 
-            if (tModelId === 'kling-avatar-image2video') {
+            if (apiModelId === 'kling-avatar-image2video') {
                 if (tRefs.length === 0) throw new Error("请上传一张人像参考图");
                 if (!tRefAudio) throw new Error("请上传驱动音频 (MP3/WAV/M4A/AAC, 2-60s)");
                 
@@ -2171,7 +2183,7 @@ const App = () => {
 
             if (isVeoModel || isGrokModel || isJimengModel || isKlingModel) {
                 const payload: any = {
-                    model: tModelId,
+                    model: apiModelId,
                     prompt: tPrompt,
                     images: tRefs.map((img: ReferenceImage) => img.data.startsWith('http') ? img.data : `data:${img.mimeType};base64,${img.data}`),
                     aspect_ratio: tRatio
@@ -2205,7 +2217,7 @@ const App = () => {
                 });
             } else {
                 const formData = new FormData();
-                formData.append('model', tModelId);
+                formData.append('model', apiModelId);
                 formData.append('prompt', tPrompt);
                 formData.append('seconds', modelDef!.options[tOptIdx].s);
                 formData.append('size', tRatio.replace(':', 'x'));
@@ -2241,7 +2253,7 @@ const App = () => {
                  const endpoint = tRefs.length > 0 ? 'image2video' : 'text2video';
                  startKlingVideoPolling(tid, pId, startTime, endpoint);
             } else {
-                startVideoPolling(tid, pId, startTime, tModelId);
+                startVideoPolling(tid, pId, startTime, apiModelId);
             }
         };
         
@@ -2679,7 +2691,6 @@ const App = () => {
                   { id: 'image', icon: ImageIcon, label: '绘画', action: () => { setMainCategory('image'); resetInputState(); }, active: mainCategory === 'image' },
                   { id: 'video', icon: Video, label: '视频', action: () => { setMainCategory('video'); resetInputState(); }, active: mainCategory === 'video' },
                   { id: 'audio', icon: Mic, label: '语音', action: () => { setMainCategory('audio'); resetInputState(); }, active: mainCategory === 'audio' },
-                  { id: 'music', icon: Music, label: '音乐', action: () => { setMainCategory('music'); resetInputState(); }, active: mainCategory === 'music' },
                   { id: 'proxy', icon: Shield, label: '代理', action: () => { setMainCategory('proxy'); resetInputState(); }, active: mainCategory === 'proxy' },
                   { id: 'announcement', icon: Megaphone, label: '公告', action: () => { setMainCategory('announcement'); resetInputState(); }, active: mainCategory === 'announcement' },
               ].map(item => (
@@ -2854,11 +2865,11 @@ const App = () => {
                             "最快一天部署上线，代理费达标后可全额返还",
                             "2026弯道超车的机会，望君把握"
                         ].map((text, i) => (
-                            <div key={i} className="group bg-white border-2 border-black p-5 transition-all duration-200 flex gap-4 items-start">
-                                <span className="shrink-0 w-8 h-8 flex items-center justify-center bg-brand-yellow border border-black font-black text-lg group-hover:bg-black group-hover:text-white transition-colors">
+                            <div key={i} className="group bg-white border-2 border-black p-5 transition-all duration-300 flex gap-4 items-start hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-brand-cream">
+                                <span className="shrink-0 w-8 h-8 flex items-center justify-center bg-brand-yellow border border-black font-black text-lg group-hover:bg-black group-hover:text-white transition-all duration-300 group-hover:scale-110 group-hover:rotate-12">
                                     {i + 1}
                                 </span>
-                                <p className="font-bold text-sm md:text-base text-slate-800 pt-1">{text}</p>
+                                <p className="font-bold text-sm md:text-base text-slate-800 pt-1 group-hover:text-black transition-colors">{text}</p>
                             </div>
                         ))}
                     </div>
@@ -2881,20 +2892,9 @@ const App = () => {
         ) : (
         <div className="flex-1 overflow-y-auto px-5 pb-5 pt-2 space-y-6 no-scrollbar">
           
-          {mainCategory !== 'audio' && (
           <section className="space-y-3">
-            {isMusicMode && (
-                <div className="p-8 border-2 border-dashed border-black/20 bg-brand-cream/50 text-center flex flex-col items-center justify-center gap-4">
-                    <Music className="w-16 h-16 text-black/20" />
-                    <div className="space-y-1">
-                        <h3 className="font-medium text-xl uppercase italic opacity-50">Music Creation</h3>
-                        <p className="text-sm font-normal text-slate-400">Coming Soon</p>
-                    </div>
-                </div>
-            )}
             
             {/* Reference Images / Audio Upload Section */}
-            {!isMusicMode && (
               <div className={`p-3 bg-brand-cream border border-black brutalist-shadow-sm ${referenceImages.length > 0 || referenceVideo || (isAudioMode && referenceAudio) ? 'solid-box-green' : 'solid-box-purple'}`}>
                   {isVideoMode && selectedVideoModel === 'kling-motion-control' ? (
                       // ... (Motion control content same)
@@ -3104,11 +3104,10 @@ const App = () => {
                       </>
                   )}
               </div>
-            )}
           </section>
-          )}
+          
 
-          {!isMusicMode && (
+          {!isChatMode && !isAnnouncementMode && !isProxyMode && (
           <section className="space-y-3">
              <SectionLabel 
                 text={isAudioMode ? "语音配置 / Voice Config" : "生成配置 / Generation Config"} 
@@ -3387,7 +3386,7 @@ const App = () => {
           )}
 
           <div className="space-y-3">
-            {!isMusicMode && !isChatMode && !isAnnouncementMode && !isProxyMode && (
+            {!isChatMode && !isAnnouncementMode && !isProxyMode && (
               <>
                 <button onClick={() => executeGeneration()} className="w-full py-3 bg-brand-red text-white text-xl font-normal border border-black brutalist-shadow hover:translate-y-1.5 hover:shadow-none transition-all uppercase tracking-tighter">
                   开始创作/Start Creating
@@ -3499,10 +3498,13 @@ const App = () => {
                   ) : (
                     // Audio Card Content
                     <div className="w-full h-full flex flex-col items-center justify-center relative bg-[#E0E7FF] p-6">
-                        <div className={`w-20 h-20 bg-brand-purple border-2 border-black rounded-full flex items-center justify-center brutalist-shadow mb-4`}>
-                            <AudioLines className="w-10 h-10 text-white" />
+                        {asset.coverUrl ? (
+                            <img src={asset.coverUrl} className="absolute inset-0 w-full h-full object-cover opacity-50 blur-[2px]" />
+                        ) : null}
+                        <div className={`w-20 h-20 bg-brand-purple border-2 border-black rounded-full flex items-center justify-center brutalist-shadow mb-4 relative z-10 overflow-hidden`}>
+                             {asset.coverUrl ? <img src={asset.coverUrl} className="w-full h-full object-cover" /> : <AudioLines className="w-10 h-10 text-white" />}
                         </div>
-                        <audio src={asset.url} controls className="w-full h-8 mt-2" />
+                        <audio src={asset.url} controls className="w-full h-8 mt-2 relative z-10" />
                     </div>
                   )}
                   <div className={`absolute top-3 left-3 ${asset.status === 'failed' ? 'bg-black text-white' : asset.type === 'video' ? 'bg-brand-red text-white' : asset.type === 'audio' ? 'bg-brand-purple text-white' : 'bg-brand-yellow'} border border-black px-2 py-0.5 font-normal text-xs uppercase z-10`}>{asset.type}</div>
@@ -3541,12 +3543,12 @@ const App = () => {
                      <button disabled={asset.status !== 'completed' && asset.status !== 'failed'} onClick={(e) => { e.stopPropagation(); handleAssetRefresh(asset); }} className="flex-1 py-1.5 bg-white border border-black brutalist-shadow-sm flex items-center justify-center gap-1 hover:bg-brand-yellow hover:translate-y-0.5 hover:shadow-none transition-all text-xs font-normal uppercase disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
                         <RefreshCw className="w-3 h-3" /> 重绘
                      </button>
-                     {asset.type !== 'audio' && (
+                     {(asset.type === 'video' || asset.type === 'image') && (
                         <button disabled={asset.status !== 'completed' || (asset.type === 'video' && !asset.modelId.includes('sora-2'))} onClick={(e) => { e.stopPropagation(); handleAssetEdit(asset); }} className="flex-1 py-1.5 bg-white border border-black brutalist-shadow-sm flex items-center justify-center gap-1 hover:bg-brand-yellow hover:translate-y-0.5 hover:shadow-none transition-all text-xs font-normal uppercase disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
                             <Edit className="w-3 h-3" /> 编辑
                         </button>
                      )}
-                     {asset.type === 'audio' && (
+                     {(asset.type === 'audio') && (
                         <button onClick={(e) => handleAssetDownload(asset, e)} className="flex-1 py-1.5 bg-white border border-black brutalist-shadow-sm flex items-center justify-center gap-1 hover:bg-brand-green hover:text-black hover:translate-y-0.5 hover:shadow-none transition-all text-xs font-normal uppercase disabled:opacity-50 disabled:grayscale disabled:hover:translate-y-0 disabled:hover:shadow-sm">
                             <Download className="w-3 h-3" /> 下载
                         </button>
@@ -3887,128 +3889,126 @@ const App = () => {
                     <div className="relative">
                         <input 
                             value={saveCategory} 
-                            onChange={e => { setSaveCategory(e.target.value); setShowSaveCategoryDropdown(true); }} 
+                            onChange={e => { setSaveCategory(e.target.value); setShowSaveCategoryDropdown(true); }}
                             onFocus={() => setShowSaveCategoryDropdown(true)}
                             className="w-full border border-black p-2 outline-none focus:bg-brand-cream text-sm font-normal" 
-                            placeholder="输入或选择分类..." 
+                            placeholder="选择或输入分类..." 
                         />
                         {showSaveCategoryDropdown && (
-                            <div className="absolute top-full left-0 right-0 border border-black border-t-0 bg-white max-h-32 overflow-y-auto z-10 shadow-lg">
-                                {categories.filter(c => c.toLowerCase().includes(saveCategory.toLowerCase())).map(c => (
-                                    <div key={c} onClick={() => { setSaveCategory(c); setShowSaveCategoryDropdown(false); }} className="p-2 hover:bg-brand-yellow cursor-pointer text-xs font-normal border-b border-slate-100 last:border-0">
-                                        {c}
-                                    </div>
-                                ))}
-                                {saveCategory && !categories.includes(saveCategory) && (
-                                    <div onClick={() => setShowSaveCategoryDropdown(false)} className="p-2 hover:bg-brand-green cursor-pointer text-xs font-normal text-brand-green">
-                                        + 新建 "{saveCategory}"
-                                    </div>
-                                )}
-                            </div>
+                            <>
+                                <div className="fixed inset-0 z-10" onClick={() => setShowSaveCategoryDropdown(false)}></div>
+                                <div className="absolute top-full left-0 right-0 bg-white border border-black max-h-40 overflow-y-auto z-20 shadow-lg mt-1">
+                                    {categories.filter(c => c.toLowerCase().includes(saveCategory.toLowerCase())).map(c => (
+                                        <div key={c} onClick={() => { setSaveCategory(c); setShowSaveCategoryDropdown(false); }} className="px-3 py-2 hover:bg-slate-100 cursor-pointer text-sm">
+                                            {c}
+                                        </div>
+                                    ))}
+                                    {categories.filter(c => c.toLowerCase().includes(saveCategory.toLowerCase())).length === 0 && (
+                                        <div className="px-3 py-2 text-slate-400 text-sm italic">
+                                            将创建新分类 "{saveCategory}"
+                                        </div>
+                                    )}
+                                </div>
+                            </>
                         )}
                     </div>
                  </div>
-                 <button onClick={confirmSavePrompt} className="w-full py-3 bg-black text-white font-normal uppercase hover:bg-brand-yellow hover:text-black border-2 border-black transition-colors brutalist-shadow-sm hover:shadow-none hover:translate-y-0.5 text-sm mt-2">
-                    确认保存 / CONFIRM
-                 </button>
+                 <div className="pt-2 flex justify-end gap-2">
+                    <button onClick={() => setActiveModal(null)} className="px-4 py-2 bg-white border border-black font-normal text-xs uppercase hover:bg-slate-100">取消</button>
+                    <button onClick={confirmSavePrompt} disabled={!saveName.trim()} className="px-4 py-2 bg-brand-green border border-black font-normal text-xs uppercase hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed">保存</button>
+                 </div>
               </div>
            </div>
         </div>
       )}
 
-      {activeModal === 'video-remix' && (
+      {activeModal === 'video-remix' && remixingAsset && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-           <div className="w-[500px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative">
-              <ModalHeader title="视频重绘 / VIDEO REMIX" icon={Wand2} onClose={() => setActiveModal(null)} bgColor="bg-brand-blue" />
-              <div className="p-6 space-y-4">
-                 <p className="text-xs font-normal text-slate-500 italic uppercase">Modify the prompt to remix the video.</p>
-                 <textarea 
-                    value={remixPrompt} 
-                    onChange={e => setRemixPrompt(e.target.value)} 
-                    className="w-full h-56 border border-black p-3 outline-none focus:bg-brand-cream resize-none font-normal text-base" 
-                    placeholder="输入新的提示词..."
-                    autoFocus
-                 />
-                 <button onClick={executeVideoRemix} className="w-full py-3 bg-brand-red text-white font-normal uppercase hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm border border-black transition-all text-sm">
-                    开始重绘 / REMIX
-                 </button>
-              </div>
-           </div>
+            <div className="w-[500px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative">
+                <ModalHeader title="视频重绘 / VIDEO REMIX" icon={RefreshCw} onClose={() => { setActiveModal(null); setRemixingAsset(null); }} />
+                <div className="p-6 space-y-4">
+                    <div className="space-y-1">
+                        <label className="font-normal text-xs uppercase block">Prompt (重绘提示词)</label>
+                        <textarea 
+                            value={remixPrompt} 
+                            onChange={e => setRemixPrompt(e.target.value)} 
+                            className="w-full h-32 border border-black p-2 outline-none focus:bg-brand-cream text-sm font-normal resize-none" 
+                            placeholder="描述你想如何修改这个视频..." 
+                            autoFocus
+                        />
+                    </div>
+                    <div className="pt-2 flex justify-end gap-2">
+                        <button onClick={() => { setActiveModal(null); setRemixingAsset(null); }} className="px-4 py-2 bg-white border border-black font-normal text-xs uppercase hover:bg-slate-100">取消</button>
+                        <button onClick={executeVideoRemix} disabled={!remixPrompt.trim()} className="px-4 py-2 bg-brand-red text-white border border-black font-normal text-xs uppercase hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed">开始重绘</button>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 
+      {/* Preview Modals */}
       {previewAsset && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setPreviewAsset(null)}>
-            <div className="max-w-[95vw] max-h-[95vh] w-auto h-auto bg-white border-2 border-black brutalist-shadow flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                
-                <div className="h-14 bg-brand-yellow border-b-2 border-black flex justify-between items-center px-4 shrink-0">
-                    <span className="font-medium text-lg uppercase italic tracking-wider">PREVIEW ASSET</span>
-                    <button onClick={() => setPreviewAsset(null)} className="w-8 h-8 bg-brand-red text-white border border-black flex items-center justify-center hover:bg-black transition-colors brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
-                        <X className="w-5 h-5" />
-                    </button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={() => setPreviewAsset(null)}>
+            <div 
+                className="bg-white border-2 border-black brutalist-shadow max-w-5xl w-full max-h-[90vh] flex flex-col relative animate-in zoom-in-95" 
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="bg-brand-yellow border-b-2 border-black p-4 flex justify-between items-center shrink-0 h-16">
+                     <h3 className="text-xl font-bold uppercase italic tracking-wider">PREVIEW ASSET</h3>
+                     <button onClick={() => setPreviewAsset(null)} className="bg-brand-red text-white w-8 h-8 flex items-center justify-center border border-black hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all">
+                        <X className="w-5 h-5"/>
+                     </button>
                 </div>
 
-                <div className="flex-1 bg-slate-100 p-4 md:p-8 flex items-center justify-center min-h-[300px] overflow-hidden relative">
-                     {previewAsset.type === 'video' ? (
-                         <video src={previewAsset.url} controls autoPlay playsInline className="max-w-full max-h-[70vh] w-auto h-auto object-contain shadow-xl border-2 border-black bg-black" />
-                     ) : previewAsset.type === 'image' ? (
-                         <img src={previewAsset.url} className="max-w-full max-h-[70vh] w-auto h-auto object-contain shadow-xl border-2 border-black bg-white" />
-                     ) : (
-                         <div className="w-[500px] p-10 bg-white border-2 border-black brutalist-shadow flex flex-col items-center">
-                              <div className="w-24 h-24 bg-brand-purple rounded-full flex items-center justify-center border-2 border-black mb-6">
-                                  <AudioLines className="w-12 h-12 text-white" />
-                              </div>
-                              <audio src={previewAsset.url} controls className="w-full" />
-                         </div>
-                     )}
+                {/* Content */}
+                <div className="flex-1 overflow-hidden bg-[#f3f4f6] p-8 flex items-center justify-center min-h-[300px]">
+                     <div className="relative max-w-full max-h-full shadow-xl border-4 border-white bg-white">
+                         {previewAsset.type === 'image' ? (
+                            <img src={previewAsset.url} className="max-w-full max-h-[calc(90vh-12rem)] object-contain block" />
+                        ) : (
+                            <video src={previewAsset.url} className="max-w-full max-h-[calc(90vh-12rem)] object-contain block" controls autoPlay loop />
+                        )}
+                    </div>
                 </div>
 
-                <div className="p-6 bg-white border-t-2 border-black flex flex-col md:flex-row gap-4 justify-between items-end md:items-center shrink-0">
+                {/* Footer */}
+                <div className="bg-white border-t-2 border-black p-6 shrink-0 flex flex-col md:flex-row justify-between items-end gap-6">
                     <div className="flex-1 min-w-0 space-y-2">
-                        <div className="space-y-1">
-                            <p className="text-[10px] font-normal text-slate-400 uppercase tracking-widest">PROMPT:</p>
-                            <p className="text-sm font-normal leading-relaxed line-clamp-3">"{previewAsset.prompt}"</p>
+                        <div className="space-y-0.5">
+                             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest block">PROMPT:</span>
+                             <p className="text-sm font-medium line-clamp-2 leading-relaxed text-black">"{previewAsset.prompt}"</p>
                         </div>
                         <div className="flex items-center gap-2">
-                             <span className="text-xs font-medium text-brand-red uppercase tracking-wider">{previewAsset.modelName}</span>
-                             <span className="text-[10px] font-normal text-slate-300">|</span>
-                             <span className="text-xs font-normal text-brand-red">{previewAsset.durationText || previewAsset.genTimeLabel}</span>
+                             <span className="text-[10px] font-bold text-brand-red uppercase tracking-wider">
+                                {previewAsset.modelId.toUpperCase()} | {previewAsset.config?.aspectRatio || previewAsset.config?.videoRatio || 'AUTO'}
+                            </span>
                         </div>
                     </div>
-
-                    <div className="flex gap-3 shrink-0">
-                        <button onClick={() => setPreviewAsset(null)} className="px-6 py-3 bg-white border border-black font-normal uppercase hover:bg-slate-100 transition-colors text-sm brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
+                    <div className="flex gap-3 shrink-0 w-full md:w-auto">
+                         <button 
+                            onClick={() => setPreviewAsset(null)}
+                            className="flex-1 md:flex-none px-6 py-3 bg-white border border-black text-xs font-bold hover:bg-slate-50 transition-colors uppercase min-w-[100px]"
+                        >
                             关闭
                         </button>
-                        <button onClick={(e) => handleAssetDownload(previewAsset, e)} className="px-6 py-3 bg-brand-red text-white border border-black font-normal uppercase hover:bg-black transition-colors text-sm flex items-center gap-2 brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
-                             DOWNLOAD
+                        <button 
+                            onClick={(e) => handleAssetDownload(previewAsset, e)}
+                            className="flex-1 md:flex-none px-6 py-3 bg-brand-red text-white border border-black text-xs font-bold hover:translate-y-0.5 hover:shadow-none brutalist-shadow-sm transition-all uppercase min-w-[120px]"
+                        >
+                            DOWNLOAD
                         </button>
                     </div>
                 </div>
-
             </div>
         </div>
       )}
 
       {previewRefImage && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4" onClick={() => setPreviewRefImage(null)}>
-            <div className="max-w-[95vw] max-h-[95vh] w-auto h-auto bg-white border-2 border-black brutalist-shadow flex flex-col animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                <div className="h-14 bg-brand-yellow border-b-2 border-black flex justify-between items-center px-4 shrink-0">
-                    <span className="font-medium text-lg uppercase italic tracking-wider">PREVIEW REFERENCE</span>
-                    <button onClick={() => setPreviewRefImage(null)} className="w-8 h-8 bg-brand-red text-white border border-black flex items-center justify-center hover:bg-black transition-colors brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
-                        <X className="w-5 h-5" />
-                    </button>
-                </div>
-
-                <div className="flex-1 bg-slate-100 p-4 md:p-8 flex items-center justify-center min-h-[300px] overflow-hidden relative">
-                     <img src={previewRefImage.data.startsWith('http') ? previewRefImage.data : `data:${previewRefImage.mimeType};base64,${previewRefImage.data}`} className="max-w-full max-h-[70vh] w-auto h-auto object-contain shadow-xl border-2 border-black bg-white" />
-                </div>
-                
-                <div className="p-4 bg-white border-t-2 border-black flex justify-end">
-                     <button onClick={() => setPreviewRefImage(null)} className="px-6 py-2 bg-white border border-black font-normal uppercase hover:bg-slate-100 transition-colors text-sm brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none">
-                        关闭 / CLOSE
-                    </button>
-                </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4" onClick={() => setPreviewRefImage(null)}>
+            <button className="absolute top-4 right-4 text-white hover:text-brand-yellow transition-colors"><X className="w-10 h-10"/></button>
+            <div className="max-w-[90vw] max-h-[90vh] relative flex items-center justify-center" onClick={e => e.stopPropagation()}>
+                <img src={previewRefImage.data.startsWith('http') ? previewRefImage.data : `data:${previewRefImage.mimeType};base64,${previewRefImage.data}`} className="max-w-full max-h-[85vh] object-contain border-2 border-white shadow-2xl" />
             </div>
         </div>
       )}
