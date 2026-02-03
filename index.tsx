@@ -2558,18 +2558,45 @@ URL=${window.location.href}
     else setSelectedAssetIds(new Set(generatedAssets.map(a => a.id)));
   };
 
-  const handleBatchDownload = () => {
-    selectedAssetIds.forEach(id => {
-      const asset = generatedAssets.find(a => a.id === id);
-      if (asset && asset.url) {
-        const link = document.createElement('a');
-        link.href = asset.url;
-        link.download = `asset-${asset.id}.${asset.type === 'video' ? 'mp4' : asset.type === 'audio' ? 'wav' : 'png'}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    });
+  const handleBatchDownload = async () => {
+    const assets = generatedAssets.filter(a => selectedAssetIds.has(a.id) && a.url);
+    if (assets.length === 0) return;
+
+    for (let i = 0; i < assets.length; i++) {
+        const asset = assets[i];
+        try {
+            let downloadUrl = asset.url;
+            let shouldRevoke = false;
+
+            // Attempt to fetch as blob to bypass CORS/Content-Disposition issues
+            try {
+                const response = await fetch(asset.url);
+                const blob = await response.blob();
+                downloadUrl = window.URL.createObjectURL(blob);
+                shouldRevoke = true;
+            } catch (e) {
+                console.warn("Fetch failed, using original URL", e);
+            }
+
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `viva-${asset.id}.${asset.type === 'video' ? 'mp4' : asset.type === 'audio' ? 'wav' : 'png'}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            if (shouldRevoke) {
+                setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 5000);
+            }
+        } catch (e) {
+            console.error("Download failed for", asset.id, e);
+        }
+
+        // Add delay to avoid browser blocking multiple downloads
+        if (i < assets.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
   };
 
   const handleAssetDownload = async (asset: GeneratedAsset, e: React.MouseEvent) => {
@@ -3474,7 +3501,7 @@ URL=${window.location.href}
                </span>
                <span className="text-base font-medium text-brand-red flex items-center gap-2">
                   <Megaphone className="w-5 h-5" />
-                  Sora 2官方改动，如遇不能使用的时候请切换至其它模型
+                  Sora 2如遇限时特价分组不能使用请切换分组为sora-vip或者切换其它模型使用
                </span>
              </div>
            </div>
