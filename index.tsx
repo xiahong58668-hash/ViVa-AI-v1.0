@@ -3796,6 +3796,10 @@ RoleName必须严格对应用户输入中的角色名。`;
                   <Megaphone className="w-5 h-5" />
                   使用sora-2模型，请确保令牌分组包含sora-vip，但依旧不保证成功率
                </span>
+               <span className="text-base font-medium text-brand-red flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5" />
+                  如遇模型不能使用，优先尝试切换API令牌分组。
+               </span>
              </div>
            </div>
         </div>
