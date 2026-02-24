@@ -1147,15 +1147,15 @@ const App = () => {
   const [editingLibraryText, setEditingLibraryText] = useState('');
   const [editingLibraryName, setEditingLibraryName] = useState('');
   const [editingLibraryCategory, setEditingLibraryCategory] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('全部');
+  // const [selectedCategory, setSelectedCategory] = useState('全部');
   const [tempSelectedStyles, setTempSelectedStyles] = useState<string[]>([]);
-  const [renamingCat, setRenamingCat] = useState<string | null>(null);
-  const [renameInput, setRenameInput] = useState('');
-  const [isAddingCategory, setIsAddingCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
+  // const [renamingCat, setRenamingCat] = useState<string | null>(null);
+  // const [renameInput, setRenameInput] = useState('');
+  // const [isAddingCategory, setIsAddingCategory] = useState(false);
+  // const [newCategoryName, setNewCategoryName] = useState('');
   const [saveName, setSaveName] = useState('');
   const [saveCategory, setSaveCategory] = useState('');
-  const [showSaveCategoryDropdown, setShowSaveCategoryDropdown] = useState(false);
+  // const [showSaveCategoryDropdown, setShowSaveCategoryDropdown] = useState(false);
   const [remixingAsset, setRemixingAsset] = useState<GeneratedAsset | null>(null);
   const [remixPrompt, setRemixPrompt] = useState('');
   
@@ -1942,7 +1942,7 @@ RoleName必须严格对应用户输入中的角色名。`;
     if (!prompt.trim()) return;
     setSaveName(prompt.slice(0, 8));
     setSaveCategory('默认');
-    setShowSaveCategoryDropdown(false);
+    // setShowSaveCategoryDropdown(false);
     setActiveModal('save-prompt-confirm');
   };
 
@@ -1964,7 +1964,7 @@ RoleName必须严格对应用户输入中的角色名。`;
         setCategories(newCats);
         localStorage.setItem('viva_library_categories', JSON.stringify(newCats));
     }
-    setSelectedCategory(cat);
+    // setSelectedCategory(cat);
     setActiveModal(null);
     setShowSaveSuccess(true);
     setTimeout(() => setShowSaveSuccess(false), 3000);
@@ -2029,6 +2029,7 @@ RoleName必须严格对应用户输入中的角色名。`;
     setEditingLibraryId(null);
   };
   
+  /*
   const handleStartAddCategory = () => {
       setIsAddingCategory(false);
       setNewCategoryName('');
@@ -2101,15 +2102,16 @@ RoleName必须严格对应用户输入中的角色名。`;
     localStorage.setItem('viva_library_categories', JSON.stringify(newCats));
     if (selectedCategory === catName) setSelectedCategory('全部');
   };
+  */
 
   const handleDragStart = (idx: number) => {
-    if (editingLibraryId || selectedCategory !== '全部') return;
+    if (editingLibraryId) return;
     setDraggedPromptIdx(idx);
   };
 
   const handleDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
-    if (editingLibraryId || selectedCategory !== '全部') return;
+    if (editingLibraryId) return;
     if (draggedPromptIdx === null || draggedPromptIdx === idx) return;
     
     const items = [...libraryPrompts];
@@ -4375,71 +4377,30 @@ RoleName必须严格对应用户输入中的角色名。`;
       {/* ... (Library, Save Confirm, Video Remix, Preview Modals remain unchanged) ... */}
       {activeModal === 'library' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-[1000px] h-[80vh] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
+          <div className="w-[900px] h-[80vh] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col">
             <ModalHeader title="提示词库 / PROMPT LIBRARY" icon={Bookmark} onClose={() => setActiveModal(null)} />
             
             <div className="flex-1 flex overflow-hidden min-h-0">
-                {/* Sidebar */}
-                <div className="w-64 bg-slate-50 border-r-2 border-black p-4 flex flex-col gap-2 overflow-y-auto">
-                  {isAddingCategory ? (
-                      <div className="flex gap-1 mb-2">
-                        <input autoFocus value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} className="w-full border border-black p-1 text-xs outline-none" placeholder="新分类名称..." onKeyDown={e => e.key === 'Enter' && handleSaveNewCategory()} />
-                        <button onClick={handleSaveNewCategory} className="bg-brand-green border border-black p-1 hover:bg-green-400 transition-colors"><Check className="w-4 h-4"/></button>
-                      </div>
-                  ) : (
-                      <button onClick={handleStartAddCategory} className="w-full py-2 bg-white border border-black flex items-center justify-center gap-1 font-normal text-xs hover:bg-brand-yellow transition-all brutalist-shadow-sm hover:shadow-none hover:translate-y-0.5 mb-2 uppercase">
-                        <Plus className="w-3 h-3"/> 新建分类
-                      </button>
-                  )}
-
-                  <div className="space-y-1">
-                      <button onClick={() => setSelectedCategory('全部')} className={`w-full text-left px-3 py-2 font-normal text-sm border transition-all flex justify-between items-center ${selectedCategory === '全部' ? 'bg-brand-yellow text-black border-black' : 'bg-transparent border-transparent hover:bg-white hover:border-black'}`}>
-                        <span>全部 (ALL)</span>
-                        {selectedCategory === '全部' && <Check className="w-3 h-3"/>}
-                      </button>
-                      {categories.map(cat => (
-                        <div key={cat} onClick={() => setSelectedCategory(cat)} className={`group w-full text-left px-3 py-2 font-normal text-sm border transition-all flex justify-between items-center cursor-pointer ${selectedCategory === cat ? 'bg-brand-yellow text-black border-black' : 'bg-transparent border-transparent hover:bg-white hover:border-black'}`}>
-                            {renamingCat === cat ? (
-                                <input autoFocus value={renameInput} onClick={e => e.stopPropagation()} onChange={e => setRenameInput(e.target.value)} onBlur={handleFinishRenameCat} onKeyDown={e => e.key === 'Enter' && handleFinishRenameCat()} className="w-full bg-white text-black text-xs p-1 outline-none" />
-                            ) : (
-                                <span className="truncate flex-1">{cat}</span>
-                            )}
-                            
-                            {renamingCat !== cat && (
-                                <div className={`flex gap-1 ${selectedCategory === cat ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                                  <button onClick={(e) => { e.stopPropagation(); handleStartRenameCat(cat); }} className="hover:text-brand-blue p-0.5"><Edit className="w-3 h-3"/></button>
-                                  <button onClick={(e) => handleDeleteCategory(cat, e)} className="hover:text-brand-red p-0.5"><Trash2 className="w-3 h-3"/></button>
-                                </div>
-                            )}
-                        </div>
-                      ))}
-                  </div>
-                </div>
-
                 {/* Main Content */}
                 <div className="flex-1 bg-white p-6 overflow-y-auto">
                     <div className="flex flex-col gap-3">
                         {libraryPrompts
-                          .filter(p => selectedCategory === '全部' || p.category === selectedCategory)
                           .map((p) => {
                             const isEditing = editingLibraryId === p.id;
                             const globalIndex = libraryPrompts.indexOf(p); // Use absolute index for drag
                             return (
                               <div 
                                 key={p.id}
-                                draggable={!editingLibraryId && selectedCategory === '全部'}
+                                draggable={!editingLibraryId}
                                 onDragStart={() => handleDragStart(globalIndex)}
                                 onDragOver={(e) => handleDragOver(e, globalIndex)}
                                 onDragEnd={handleDragEnd}
-                                className={`border border-black p-4 transition-all ${isEditing ? 'bg-brand-cream ring-4 ring-black/10' : 'bg-white hover:-translate-y-1 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]'}`}
+                                className={`border border-black p-4 transition-all ${isEditing ? 'bg-brand-cream ring-4 ring-black/10' : 'bg-white hover:bg-brand-cream'}`}
                               >
                                 {isEditing ? (
                                     <div className="space-y-3" onClick={e => e.stopPropagation()}>
                                       <div className="flex gap-2">
                                           <input value={editingLibraryName} onChange={e => setEditingLibraryName(e.target.value)} className="flex-1 font-normal border-b border-black bg-transparent outline-none pb-1 text-sm" placeholder="名称" />
-                                          <select value={editingLibraryCategory} onChange={e => setEditingLibraryCategory(e.target.value)} className="border border-black text-xs p-1 font-normal outline-none">
-                                              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                                          </select>
                                       </div>
                                       <textarea value={editingLibraryText} onChange={e => setEditingLibraryText(e.target.value)} className="w-full h-24 text-xs border border-black p-2 resize-none outline-none focus:bg-white" placeholder="提示词..." />
                                       <div className="flex items-center gap-2 justify-end">
@@ -4449,15 +4410,12 @@ RoleName必须严格对应用户输入中的角色名。`;
                                     </div>
                                 ) : (
                                     <div className="flex gap-4">
-                                      {selectedCategory === '全部' && (
-                                          <div className="cursor-grab active:cursor-grabbing flex flex-col justify-center text-slate-300 hover:text-black transition-colors">
-                                            <GripVertical className="w-5 h-5"/>
-                                          </div>
-                                      )}
+                                      <div className="cursor-grab active:cursor-grabbing flex flex-col justify-center text-slate-300 hover:text-black transition-colors">
+                                        <GripVertical className="w-5 h-5"/>
+                                      </div>
                                       <div className="flex-1 min-w-0 space-y-2">
                                           <div className="flex justify-between items-start">
                                             <h4 className="font-normal text-base truncate pr-2">{p.name}</h4>
-                                            <span className="text-[10px] font-normal bg-slate-100 px-1.5 py-0.5 border border-black uppercase whitespace-nowrap">{p.category}</span>
                                           </div>
                                           <p className="text-sm text-slate-500 line-clamp-2 cursor-pointer hover:text-black transition-colors leading-relaxed" onClick={() => usePromptFromLibrary(p.text)} title={p.text}>{p.text}</p>
                                           
@@ -4492,23 +4450,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                 <div className="space-y-3">
                     <input autoFocus value={saveName} onChange={e => setSaveName(e.target.value)} className="w-full border border-black p-2 text-sm outline-none" placeholder="名称 (Name)" />
                     
-                    <div className="relative">
-                        <div className="flex">
-                            <input value={saveCategory} onChange={e => setSaveCategory(e.target.value)} className="flex-1 border border-black p-2 text-sm outline-none border-r-0" placeholder="分类 (Category)" />
-                            <button onClick={() => setShowSaveCategoryDropdown(!showSaveCategoryDropdown)} className="px-2 bg-slate-100 border border-black hover:bg-slate-200">
-                                <ChevronDown className="w-4 h-4"/>
-                            </button>
-                        </div>
-                        {showSaveCategoryDropdown && (
-                            <div className="absolute top-full left-0 right-0 border border-black border-t-0 bg-white max-h-40 overflow-y-auto z-10 shadow-lg">
-                                {categories.map(c => (
-                                    <div key={c} onClick={() => { setSaveCategory(c); setShowSaveCategoryDropdown(false); }} className="p-2 hover:bg-slate-100 cursor-pointer text-sm">
-                                        {c}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                    {/* Category selection removed */}
 
                     <div className="bg-slate-50 p-2 text-xs text-slate-500 border border-black line-clamp-3 italic">
                         {prompt}
