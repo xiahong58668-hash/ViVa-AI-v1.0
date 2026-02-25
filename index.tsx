@@ -204,7 +204,7 @@ const MODEL_CAPABILITIES: Record<string, { image: boolean; audio: boolean; video
 const VIDEO_MODELS = [
   {
     id: 'seedance-2.0',
-    name: 'Seedance 2.0',
+    name: 'SEEDANCE 2.0待官方开放API',
     desc: '高清/多比例',
     supportedAspectRatios: ['9:16', '16:9', '1:1', '3:4', '4:3', '21:9'],
     options: [
@@ -1006,7 +1006,7 @@ const PRICE_DATA = [
   {
     category: 'AI对话',
     items: [
-      { m: 'Gemini-3-Flash-Preview', p: '提示0.3000/ 1M tokens，补全1.26/ 1M tokens' },
+      { m: 'Gemini-3-Flash', p: '提示0.30/ 1M tokens，补全1.26/ 1M tokens' },
       { m: 'Gemini-3-Pro-Preview', p: '提示1.20/ 1M tokens，补全7.20/ 1M tokens' },
       { m: 'GPT-5-Mini', p: '提示0.15/ 1M tokens，补全1.20/ 1M tokens' }
     ]
@@ -1027,7 +1027,7 @@ const PRICE_DATA = [
     items: [
       { m: 'Sora 2', p: 'default分组 0.14元/条，sora-vip分组 0.56元/条' },
       { m: 'VEO 3.1 Fast', p: '0.126元/条' },
-      { m: 'Grok Video 3', p: '6s 0.14元/条，10s 0.28元/条，15S 0.35元/条' },
+      { m: 'Grok Video 3', p: '6S 0.14元/条，10S 0.28元/条，15S 0.35元/条' },
       { m: 'VEO 3.1 Fast 4K', p: '0.181元/条' },
       { m: 'VEO 3.1 Mix 4K (多图融合)', p: '0.361元/条' },
       { m: 'KLING Control Std (动作转移)', p: '0.595元/秒' },
@@ -1074,7 +1074,7 @@ const PriceView = () => {
                         {cat.items.map((item, iidx) => (
                           <div key={iidx} className="flex justify-between items-center px-6 py-4 hover:bg-brand-cream transition-colors group">
                             <span className="text-lg font-medium text-slate-800 group-hover:text-black">{item.m}</span>
-                            <span className="text-base font-bold font-mono text-black bg-slate-100 px-3 py-1 border border-slate-200 rounded-sm group-hover:border-black group-hover:bg-white transition-colors">
+                            <span className="text-base font-medium text-black">
                                 {item.p}
                             </span>
                           </div>
