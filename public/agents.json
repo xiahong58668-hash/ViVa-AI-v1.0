@@ -1,0 +1,21 @@
+{
+  "default": {
+    "appName": "ViVa AI助手",
+    "wechatSupport": "viva-api",
+    "moreDetailsLink": "https://ai.feishu.cn/wiki/O6Q9wrxxci898Wkj6ndcFnlknJd?from=from_copylink",
+    "casesLink": "https://my.feishu.cn/wiki/LIEvwzn0jipQ4PkF0dkc57I2njh?from=from_copylink",
+    "mainSiteLink": "https://www.vivaapi.cn",
+    "exchangeRate": 0.7
+  },
+  "agents": [
+    {
+      "domain": "agent-a.example.com",
+      "appName": "代理A助手",
+      "wechatSupport": "agent-a-wx",
+      "moreDetailsLink": "https://example.com/agent-a-details",
+      "casesLink": "https://example.com/agent-a-cases",
+      "mainSiteLink": "https://agent-a.vivaapi.cn",
+      "exchangeRate": 0.8
+    }
+  ]
+}
