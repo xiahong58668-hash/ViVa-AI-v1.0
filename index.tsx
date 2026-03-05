@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
+import { AGENT_CONFIG } from './agent.config';
+import { formatPriceString } from './pricing';
 import { 
   Settings2, Sparkles, Video, 
   Loader2, Download,
@@ -101,7 +103,7 @@ interface DialogueLine {
 
 // --- Constants ---
 
-const FIXED_BASE_URL = import.meta.env.VITE_BASE_URL || 'https://www.vivaapi.cn';
+const FIXED_BASE_URL = AGENT_CONFIG.baseUrl;
 const INITIAL_CHAT_MESSAGE_TEXT = '我可以帮你解答问题、分析文档或处理多媒体内容。支持上传: 文本, 图片, 音频, 视频, PDF以及更多格式。';
 
 const ASPECT_RATIO_LABELS: Record<string, string> = {
@@ -1070,74 +1072,13 @@ const PRICE_DATA = [
   }
 ];
 
-interface AgentConfig {
-  appName: string;
-  wechatSupport: string;
-  moreDetailsLink: string;
-  casesLink: string;
-  mainSiteLink: string;
-  exchangeRate: number;
-  baseUrl?: string;
-}
-
-const DEFAULT_AGENT_CONFIG: AgentConfig = {
-  appName: import.meta.env.VITE_APP_NAME || "绘影AI助手",
-  wechatSupport: import.meta.env.VITE_WECHAT_SUPPORT || "HeTieJiang777",
-  moreDetailsLink: "https://ai.feishu.cn/wiki/O6Q9wrxxci898Wkj6ndcFnlknJd?from=from_copylink",
-  casesLink: "https://my.feishu.cn/wiki/LIEvwzn0jipQ4PkF0dkc57I2njh?from=from_copylink",
-  mainSiteLink: "https://www.navidrawing.com",
-  exchangeRate: parseFloat(import.meta.env.VITE_EXCHANGE_RATE || "0.8"),
-  baseUrl: import.meta.env.VITE_BASE_URL || FIXED_BASE_URL
-};
-
-const PriceView = ({ exchangeRate }: { exchangeRate: number }) => {
+const PriceView = () => {
     const [expanded, setExpanded] = useState<Record<number, boolean>>(
         PRICE_DATA.reduce((acc, cat, idx) => ({...acc, [idx]: cat.category === '图片创作'}), {})
     );
 
     const toggle = (idx: number) => {
         setExpanded(prev => ({...prev, [idx]: !prev[idx]}));
-    };
-
-    const formatPrice = (p: string | React.ReactNode) => {
-        if (typeof p !== 'string') {
-            // If it's a ReactNode (like the Sora-2 multi-line price), we need to handle it
-            // This is complex because we'd need to traverse the React tree.
-            // For now, let's just render it as is, or handle it specifically if needed.
-            return p;
-        }
-        
-        // Regex to find numbers followed by '元'
-        return p.replace(/(\d+(\.\d+)?)(元)/g, (_, num) => {
-            const basePrice = parseFloat(num) / 0.7; // Assuming current prices are based on 0.7 rate
-            const adjustedPrice = basePrice * exchangeRate;
-            return adjustedPrice.toFixed(3) + '元';
-        });
-    };
-
-    const renderPrice = (p: string | React.ReactNode) => {
-        if (typeof p === 'string') {
-            return formatPrice(p);
-        }
-        
-        // Handle ReactNode (specifically the Sora-2 multi-line price)
-        if (React.isValidElement(p)) {
-            return React.cloneElement(p as React.ReactElement, {
-                children: React.Children.map((p as React.ReactElement).props.children, child => {
-                    if (typeof child === 'string') return formatPrice(child);
-                    if (React.isValidElement(child)) {
-                        return React.cloneElement(child as React.ReactElement, {
-                            children: React.Children.map((child as React.ReactElement).props.children, subChild => {
-                                if (typeof subChild === 'string') return formatPrice(subChild);
-                                return subChild;
-                            })
-                        });
-                    }
-                    return child;
-                })
-            });
-        }
-        return p;
     };
 
     return (
@@ -1160,7 +1101,22 @@ const PriceView = ({ exchangeRate }: { exchangeRate: number }) => {
                           <div key={iidx} className="flex justify-between items-center px-6 py-2 hover:bg-brand-cream transition-colors group">
                             <span className="text-lg font-medium text-slate-800 group-hover:text-black">{item.m}</span>
                             <span className="text-base font-medium text-black">
-                                {renderPrice(item.p)}
+                                {typeof item.p === 'string' ? formatPriceString(item.p) : (
+                                  <div className="flex flex-col items-end text-right">
+                                    {/* 递归处理 JSX 中的文本内容 */}
+                                    {React.Children.map(item.p.props.children, (child) => {
+                                      if (typeof child === 'string') return <div>{formatPriceString(child)}</div>;
+                                      if (React.isValidElement(child)) {
+                                        return React.cloneElement(child as React.ReactElement, {
+                                          children: React.Children.map((child as React.ReactElement).props.children, (c) => 
+                                            typeof c === 'string' ? formatPriceString(c) : c
+                                          )
+                                        });
+                                      }
+                                      return child;
+                                    })}
+                                  </div>
+                                )}
                             </span>
                           </div>
                         ))}
@@ -1173,58 +1129,6 @@ const PriceView = ({ exchangeRate }: { exchangeRate: number }) => {
 };
 
 const App = () => {
-  const [agentConfig, setAgentConfig] = useState<AgentConfig>(DEFAULT_AGENT_CONFIG);
-
-  useEffect(() => {
-    const fetchAgentConfig = async () => {
-      try {
-        // 1. Try to fetch local config.json (for forks, git-ignored)
-        let localConfig = {};
-        try {
-          const localRes = await fetch('/config.json');
-          if (localRes.ok) {
-            localConfig = await localRes.json();
-          }
-        } catch (e) {
-          // Ignore if config.json doesn't exist
-        }
-
-        // 2. Try to fetch multi-agent config
-        const response = await fetch('/agents.json');
-        if (response.ok) {
-          const data = await response.json();
-          const hostname = window.location.hostname;
-          const agent = data.agents?.find((a: any) => a.domain === hostname);
-          
-          let finalConfig = { ...DEFAULT_AGENT_CONFIG, ...localConfig };
-          
-          if (agent) {
-            finalConfig = { ...finalConfig, ...data.default, ...agent };
-          } else if (data.default) {
-            finalConfig = { ...finalConfig, ...data.default };
-          }
-          
-          setAgentConfig(finalConfig);
-          
-          // If the config has a baseUrl, update the app config
-          if (finalConfig.baseUrl) {
-            setConfig(prev => ({ ...prev, baseUrl: finalConfig.baseUrl || FIXED_BASE_URL }));
-            setTempConfig(prev => ({ ...prev, baseUrl: finalConfig.baseUrl || FIXED_BASE_URL }));
-          }
-        } else if (Object.keys(localConfig).length > 0) {
-          const finalConfig = { ...DEFAULT_AGENT_CONFIG, ...localConfig };
-          setAgentConfig(finalConfig);
-          if (finalConfig.baseUrl) {
-            setConfig(prev => ({ ...prev, baseUrl: finalConfig.baseUrl || FIXED_BASE_URL }));
-            setTempConfig(prev => ({ ...prev, baseUrl: finalConfig.baseUrl || FIXED_BASE_URL }));
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch agent config:', error);
-      }
-    };
-    fetchAgentConfig();
-  }, []);
   const [mainCategory, setMainCategory] = useState<MainCategory>('image');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMarqueeVisible, setIsMarqueeVisible] = useState(true);
@@ -1261,6 +1165,10 @@ const App = () => {
   const [prompt, setPrompt] = useState('');
   const [libraryPrompts, setLibraryPrompts] = useState<SavedPrompt[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    document.title = AGENT_CONFIG.appName;
+  }, []);
   const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [referenceVideos, setReferenceVideos] = useState<ReferenceImage[]>([]);
   const [referenceAudios, setReferenceAudios] = useState<ReferenceAudio[]>([]);
@@ -1321,8 +1229,8 @@ const App = () => {
   const isFullWidthMode = isChatMode || isProxyMode || isAnnouncementMode || isResourcesMode;
 
   const handleSaveShortcut = () => {
-    const appUrl = window.location.origin;
-    const appName = agentConfig.appName;
+    const appUrl = "https://p.vivaapi.cn";
+    const appName = AGENT_CONFIG.appName;
     const robotIconSvg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23F472B6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 8V4H8'/><rect width='16' height='12' x='4' y='8' rx='2'/><path d='M2 14h2'/><path d='M20 14h2'/><path d='M15 13v2'/><path d='M9 13v2'/></svg>`;
     
     const htmlContent = `<!DOCTYPE html>
@@ -3245,7 +3153,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                   { id: 'resources', icon: FolderOpen, label: '资源', action: () => { setMainCategory('resources'); resetInputState(); }, active: mainCategory === 'resources' },
                   { id: 'proxy', icon: Shield, label: '代理', action: () => { setMainCategory('proxy'); resetInputState(); }, active: mainCategory === 'proxy' },
                   { id: 'announcement', icon: Megaphone, label: '公告', action: () => { setMainCategory('announcement'); resetInputState(); }, active: mainCategory === 'announcement' },
-                  { id: 'case', icon: BookOpen, label: '案例', action: () => { window.open(agentConfig.casesLink, '_blank'); }, active: false },
+                  { id: 'case', icon: BookOpen, label: '案例', action: () => { window.open('https://my.feishu.cn/wiki/LIEvwzn0jipQ4PkF0dkc57I2njh?from=from_copylink', '_blank'); }, active: false },
                   { id: 'save', icon: Save, label: '保存', action: handleSaveShortcut, active: false },
               ].map(item => (
                   <button 
@@ -3285,7 +3193,7 @@ RoleName必须严格对应用户输入中的角色名。`;
       <div className={`bg-white flex flex-col z-20 brutalist-shadow transition-all duration-300 ${isFullWidthMode ? 'flex-1 w-full border-r-0' : (isSidebarOpen ? 'w-full md:w-[450px] border-r-2 border-black' : 'w-0 md:w-0 overflow-hidden border-r-0 opacity-0')}`}>
         <header className="bg-brand-yellow pl-3 pr-5 border-b-2 border-black h-14 md:h-16 flex items-center justify-between transition-colors duration-300">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold italic tracking-tight text-black">{agentConfig.appName}</h1>
+            <h1 className="text-2xl font-bold italic tracking-tight text-black">{AGENT_CONFIG.appName}</h1>
           </div>
           {isFullWidthMode && (
           <div className="flex items-center gap-2 md:gap-3">
@@ -3298,7 +3206,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                 <button onClick={() => setActiveModal('links')} title="联系客服" className="w-9 h-9 md:w-10 md:h-10 bg-white border border-black flex items-center justify-center brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
                     <Headset className="w-5 h-5 md:w-6 md:h-6"/>
                 </button>
-                <a href={`${agentConfig.baseUrl}/console/log`} target="_blank" title="使用日志" className="w-9 h-9 md:w-10 md:h-10 bg-white border border-black flex items-center justify-center brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
+                <a href={`${AGENT_CONFIG.baseUrl}/console/log`} target="_blank" title="使用日志" className="w-9 h-9 md:w-10 md:h-10 bg-white border border-black flex items-center justify-center brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
                   <History className="w-5 h-5 md:w-6 md:h-6" />
                 </a>
           </div>
@@ -3493,7 +3401,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                     </div>
 
                     {/* CTA Section */}
-                    <a href={agentConfig.mainSiteLink} target="_blank" className="block group relative">
+                    <a href="https://ai.feishu.cn/wiki/O6Q9wrxxci898Wkj6ndcFnlknJd?from=from_copylink" target="_blank" className="block group relative">
                         <div className="relative bg-white border-2 border-black p-8 flex flex-col md:flex-row items-center justify-between gap-6 hover:-translate-y-1 transition-transform cursor-pointer">
                             <div className="space-y-2">
                                 <h3 className="text-2xl font-black uppercase italic">立即加入代理计划</h3>
@@ -4253,7 +4161,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                 <button onClick={() => setActiveModal('links')} title="联系客服" className="w-9 h-9 md:w-10 md:h-10 bg-white border border-black flex items-center justify-center brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
                     <Headset className="w-5 h-5 md:w-6 md:h-6"/>
                 </button>
-                <a href={`${agentConfig.baseUrl}/console/log`} target="_blank" title="使用日志" className="w-9 h-9 md:w-10 md:h-10 bg-white border border-black flex items-center justify-center brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
+                <a href={`${AGENT_CONFIG.baseUrl}/console/log`} target="_blank" title="使用日志" className="w-9 h-9 md:w-10 md:h-10 bg-white border border-black flex items-center justify-center brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all">
                   <History className="w-5 h-5 md:w-6 md:h-6" />
                 </a>
           </div>
@@ -4322,7 +4230,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                         </div>
                         {asset.type === 'video' && (
                             <a 
-                                href={`${agentConfig.baseUrl}/console/task`} 
+                                href={`${AGENT_CONFIG.baseUrl}/console/task`} 
                                 target="_blank" 
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
@@ -4517,7 +4425,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                             微信客服
                           </div>
                           <div className="bg-white border border-black px-4 py-3 text-2xl font-bold uppercase tracking-wider select-all cursor-text hover:bg-slate-50 transition-colors flex-1 text-center">
-                              {agentConfig.wechatSupport}
+                              {AGENT_CONFIG.wechatContact}
                           </div>
                       </div>
                       <p className="text-[10px] font-normal text-slate-400 uppercase italic">Click text to copy / Long press</p>
@@ -4537,7 +4445,7 @@ RoleName必须严格对应用户输入中的角色名。`;
                       </p>
                   </div>
 
-                  <a href={agentConfig.moreDetailsLink} target="_blank" className="flex items-center justify-center w-full py-4 bg-brand-red text-white border-2 border-transparent outline outline-2 outline-black font-bold text-lg uppercase hover:bg-black hover:translate-y-1 hover:shadow-none brutalist-shadow transition-all italic gap-2 group">
+                  <a href="https://ai.feishu.cn/wiki/O6Q9wrxxci898Wkj6ndcFnlknJd?from=from_copylink" target="_blank" className="flex items-center justify-center w-full py-4 bg-brand-red text-white border-2 border-transparent outline outline-2 outline-black font-bold text-lg uppercase hover:bg-black hover:translate-y-1 hover:shadow-none brutalist-shadow transition-all italic gap-2 group">
                       查看更多详情 <ExternalLink className="w-5 h-5 group-hover:scale-110 transition-transform"/>
                   </a>
                </div>
@@ -4553,7 +4461,7 @@ RoleName必须严格对应用户输入中的角色名。`;
             <div className="p-8 space-y-6">
               {[
                 { n: '1', t: '注册与令牌', d: <>
-                  前往主站 <a href={agentConfig.mainSiteLink} target="_blank" className="text-blue-600 font-medium underline italic">{agentConfig.mainSiteLink.replace('https://', '')}</a> 注册并创建您的专属令牌。
+                  前往主站 <a href="https://www.vivaapi.cn" target="_blank" className="text-blue-600 font-medium underline italic">www.vivaapi.cn</a> 注册并创建您的专属令牌。
                   <div className="mt-2 text-brand-red font-normal text-sm">API令牌分组：限时特价→default→优质gemini→逆向→sora-vip</div>
                 </> },
                 { n: '2', t: '配置使用', d: '点击本站上方设置 按钮，输入令牌即可开始创作。' },
@@ -4574,7 +4482,7 @@ RoleName必须严格对应用户输入中的角色名。`;
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-[700px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative flex flex-col max-h-[85vh]">
             <ModalHeader title="价格说明 / PRICING" icon="¥" onClose={() => setActiveModal(null)} />
-            <PriceView exchangeRate={agentConfig.exchangeRate} />
+            <PriceView />
             <div className="p-3 bg-brand-cream border-t-2 border-black shrink-0 text-center">
                 <p className="text-sm text-slate-500 font-normal italic">
                    此价格为最低分组价格，详细可在API站点模型广场查看
