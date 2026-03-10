@@ -15,7 +15,7 @@ import {
   User, VolumeX, AudioLines, MessageSquare,
   ChevronLeft, ChevronRight, MessageSquarePlus, Zap, Eraser, ArrowUp,
   ChevronDown, Brush, Brain, Monitor, ArrowDown, FolderOpen, Frown,
-  Link, Globe
+  Link, Globe, Bell
 } from 'lucide-react';
 
 // --- Types & Declarations ---
@@ -1234,6 +1234,7 @@ const PriceView = () => {
 const App = () => {
   const [mainCategory, setMainCategory] = useState<MainCategory>('image');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [showAnnouncement, setShowAnnouncement] = useState(true);
   
   // Chat state moved here for persistence
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ role: 'model', text: INITIAL_CHAT_MESSAGE_TEXT }]);
@@ -3273,7 +3274,7 @@ RoleName必须严格对应用户输入中的角色名。`;
   const renderNavRail = () => (
       <div className="w-full md:w-20 bg-white border-b-2 md:border-b-0 border-black flex md:flex-col justify-between md:justify-start items-center z-30 shrink-0 overflow-x-auto md:overflow-visible">
           
-          <div className="hidden md:flex h-16 w-full items-center justify-end pr-3 border-b-2 border-black bg-brand-yellow shrink-0">
+          <div className="hidden md:flex h-12 w-full items-center justify-end pr-3 border-b-2 border-black bg-brand-yellow shrink-0">
              <Bot className="w-10 h-10 text-black" strokeWidth={2} />
           </div>
 
@@ -3323,7 +3324,7 @@ RoleName必须严格对应用户输入中的角色名。`;
       {renderNavRail()}
 
       <div className={`bg-white flex flex-col z-20 brutalist-shadow transition-all duration-300 ${isFullWidthMode ? 'flex-1 w-full border-r-0' : (isSidebarOpen ? 'w-full md:w-[450px] border-r-2 border-black' : 'w-0 md:w-0 overflow-hidden border-r-0 opacity-0')}`}>
-        <header className="bg-brand-yellow pl-1 pr-5 border-b-2 border-black h-14 md:h-16 flex items-center justify-between transition-colors duration-300">
+        <header className="bg-brand-yellow pl-1 pr-5 border-b-2 border-black h-12 flex items-center justify-between transition-colors duration-300">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold italic tracking-tight text-black">{APP_CONFIG.APP_NAME}</h1>
           </div>
@@ -4226,7 +4227,7 @@ RoleName必须严格对应用户输入中的角色名。`;
       {!isFullWidthMode && (
       <div ref={galleryRef} className="flex-1 flex flex-col relative h-full overflow-hidden" onMouseDown={handleContainerMouseDown}>
         {/* ... (Existing JSX for gallery header and items remains the same) */}
-        <div className="bg-brand-yellow border-b-2 border-black px-6 h-14 md:h-16 flex justify-between items-center z-10 shrink-0">
+        <div className="bg-brand-yellow border-b-2 border-black px-6 h-12 flex justify-between items-center z-10 shrink-0">
           <div className="flex items-center gap-4">
               {selectedAssetIds.size > 0 && (
                 <div className="flex gap-2 mr-4">
@@ -4255,6 +4256,29 @@ RoleName必须严格对应用户输入中的角色名。`;
            <button onClick={handleSelectAll} className="flex-shrink-0 flex items-center gap-2 border border-black px-3 py-1.5 text-xs font-normal brutalist-shadow-sm hover:translate-y-0.5 hover:shadow-none transition-all bg-white uppercase">
               {selectedAssetIds.size === generatedAssets.length && generatedAssets.length > 0 ? <CheckSquare className="w-4 h-4"/> : <Square className="w-4 h-4"/>} 全选
             </button>
+            
+            <div className="flex-1 flex items-center overflow-hidden bg-[#FEF2F2] border border-[#FECACA] rounded px-3 py-1.5 relative h-[34px]">
+                {showAnnouncement ? (
+                    <>
+                        <div className="overflow-hidden whitespace-nowrap w-full pr-6 relative">
+                            <div className="inline-block animate-marquee text-[#DC2626] text-xs font-medium">
+                                公告：1、本应用不储存用户资产，请及时下载；2、生成失败请重新生成，扣费自动返还；3、OpenClaw一键安装包见主站API文档。
+                            </div>
+                        </div>
+                        <button 
+                            onClick={() => setShowAnnouncement(false)} 
+                            className="absolute right-2 z-10 text-[#DC2626] hover:text-[#991B1B] bg-[#FEF2F2] pl-2"
+                            title="关闭公告"
+                        >
+                            <X className="w-4 h-4" />
+                        </button>
+                    </>
+                ) : (
+                    <div className="text-[#DC2626] text-xs font-medium flex items-center gap-1 cursor-pointer w-full" onClick={() => setShowAnnouncement(true)}>
+                        <Bell className="w-3.5 h-3.5" /> 展开公告
+                    </div>
+                )}
+            </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 pt-2 pb-6 no-scrollbar">
