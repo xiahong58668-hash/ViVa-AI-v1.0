@@ -4234,26 +4234,30 @@ const App = () => {
               {selectedAssetIds.size === generatedAssets.length && generatedAssets.length > 0 ? <CheckSquare className="w-4 h-4"/> : <Square className="w-4 h-4"/>} 全选
             </button>
             
-            <div className="flex-1 flex items-center overflow-hidden bg-[#FEF2F2] border border-[#FECACA] rounded px-3 py-1.5 relative h-[34px]">
+            <div className="flex-1 flex items-center overflow-hidden relative h-[34px] gap-2">
                 {showAnnouncement ? (
                     <>
-                        <div className="overflow-hidden whitespace-nowrap w-full pr-6 relative">
-                            <div className="inline-block animate-marquee text-[#DC2626] text-xs font-medium">
-                                公告：1、本应用不储存用户资产，请及时下载；2、生成失败请重新生成，扣费自动返还；3、OpenClaw一键安装包见主站API文档。
-                            </div>
-                        </div>
                         <button 
                             onClick={() => setShowAnnouncement(false)} 
-                            className="absolute right-2 z-10 text-[#DC2626] hover:text-[#991B1B] bg-[#FEF2F2] pl-2"
+                            className="text-black hover:text-brand-red transition-colors shrink-0"
                             title="关闭公告"
                         >
                             <X className="w-4 h-4" />
                         </button>
+                        <div className="overflow-hidden whitespace-nowrap w-full relative">
+                            <div className="inline-block animate-marquee text-black text-xs font-normal">
+                                {APP_CONFIG.ANNOUNCEMENT}
+                            </div>
+                        </div>
                     </>
                 ) : (
-                    <div className="text-[#DC2626] text-xs font-medium flex items-center gap-1 cursor-pointer w-full" onClick={() => setShowAnnouncement(true)}>
-                        <Bell className="w-3.5 h-3.5" /> 展开公告
-                    </div>
+                    <button 
+                        onClick={() => setShowAnnouncement(true)} 
+                        className="text-black hover:text-brand-red transition-colors shrink-0"
+                        title="展开公告"
+                    >
+                        <Bell className="w-4 h-4" />
+                    </button>
                 )}
             </div>
         </div>
