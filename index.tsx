@@ -4073,11 +4073,16 @@ const App = () => {
                                             <option value={1}>高品质模式</option>
                                         </>
                                     ) : (
-                                        currentVideoModel?.options.map((opt, idx) => (
-                                            <option key={idx} value={idx} disabled={isSyncAudio && opt.q === '标准模式'}>
-                                                {(opt as any).s === 'AUTO' ? '自动时长' : (opt as any).s + 'S'} ({opt.q})
-                                            </option>
-                                        ))
+                                        currentVideoModel?.options.map((opt, idx) => {
+                                            const isGrok15 = selectedVideoModel === 'grok-video-3' && (opt as any).s === '15';
+                                            const label = (opt as any).s === 'AUTO' ? '自动时长' : (opt as any).s + 'S';
+                                            const qLabel = isGrok15 ? `（${opt.q}）` : `(${opt.q})`;
+                                            return (
+                                                <option key={idx} value={idx} disabled={(isSyncAudio && opt.q === '标准模式') || isGrok15}>
+                                                    {label}{qLabel}{isGrok15 ? '(模型下线)' : ''}
+                                                </option>
+                                            );
+                                        })
                                     )}
                                 </select>
                                 </div>
