@@ -4320,7 +4320,7 @@ const App = () => {
                         </button>
                         <div className="overflow-hidden whitespace-nowrap w-full relative">
                             <div className="inline-block animate-marquee text-black text-sm font-normal">
-                                公告：1、本应用不储存用户资产，请及时下载；2、生成失败请重新生成，扣费自动返还；3、如遇连续失败，请暂时切换分组或者切换其它模型使用。
+                                公告：1、本应用不储存用户资产，请及时下载；2、生成失败请重新生成，扣费自动返还；3、如遇连续失败，请暂时切换分组或者切换其它模型使用；4、欢迎联系客服提供优化建议。
                             </div>
                         </div>
                     </>
@@ -4541,19 +4541,19 @@ const App = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="w-[500px] bg-white border-2 border-black brutalist-shadow animate-in zoom-in-95 relative">
             <ModalHeader title="联系客服 / SUPPORT" icon={MessageCircleQuestion} onClose={() => setActiveModal(null)} />
-            <div className="p-8 space-y-6">
-               <div className="bg-brand-cream border-2 border-black p-6 flex flex-col items-center gap-4 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
+            <div className="p-6 space-y-4">
+               <div className="bg-brand-cream border-2 border-black p-4 flex flex-col items-center gap-2 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
                   <div className="absolute top-0 right-0 bg-brand-yellow px-3 py-1 border-l border-b border-black font-normal text-[10px] uppercase">Online</div>
-                  <div className="w-16 h-16 bg-brand-blue text-white border border-black rounded-full flex items-center justify-center brutalist-shadow-sm mb-2">
-                      <MessageCircleQuestion className="w-8 h-8" />
+                  <div className="w-14 h-14 bg-brand-blue text-white border border-black rounded-full flex items-center justify-center brutalist-shadow-sm mb-1">
+                      <MessageCircleQuestion className="w-7 h-7" />
                   </div>
-                  <div className="text-center space-y-2 w-full">
+                  <div className="text-center space-y-1 w-full">
                       <h3 className="font-bold text-sm uppercase italic text-slate-500 tracking-widest">WeChat Support</h3>
                       <div className="flex w-full items-stretch">
                           <div className="bg-brand-green text-black px-4 flex items-center justify-center border border-black border-r-0 font-bold text-xl whitespace-nowrap tracking-tighter">
                             微信客服
                           </div>
-                          <div className="bg-white border border-black px-4 py-3 text-2xl font-bold uppercase tracking-wider select-all cursor-text hover:bg-slate-50 transition-colors flex-1 text-center">
+                          <div className="bg-white border border-black px-4 py-2 text-2xl font-bold uppercase tracking-wider select-all cursor-text hover:bg-slate-50 transition-colors flex-1 text-center">
                               {APP_CONFIG.WECHAT_SERVICE}
                           </div>
                       </div>
@@ -4563,7 +4563,7 @@ const App = () => {
 
                <div className="w-full h-0.5 bg-slate-100 border-t border-dashed border-slate-300"></div>
 
-               <div className="space-y-4 text-center">
+               <div className="space-y-3 text-center">
                   <div className="space-y-1">
                       <h4 className="font-bold text-lg uppercase italic flex items-center justify-center gap-2">
                           <span className="w-2 h-2 bg-brand-green rounded-full border border-black"></span>
@@ -4574,7 +4574,7 @@ const App = () => {
                       </p>
                   </div>
 
-                  <a href={APP_CONFIG.SUPPORT_DETAIL_URL} target="_blank" className="flex items-center justify-center w-full py-4 bg-brand-red text-white border-2 border-transparent outline outline-2 outline-black font-bold text-lg uppercase hover:bg-black hover:translate-y-1 hover:shadow-none brutalist-shadow transition-all italic gap-2 group">
+                  <a href={APP_CONFIG.SUPPORT_DETAIL_URL} target="_blank" className="flex items-center justify-center w-full py-3 bg-brand-red text-white border-2 border-transparent outline outline-2 outline-black font-bold text-lg uppercase hover:bg-black hover:translate-y-1 hover:shadow-none brutalist-shadow transition-all italic gap-2 group">
                       查看更多详情 <ExternalLink className="w-5 h-5 group-hover:scale-110 transition-transform"/>
                   </a>
                </div>
