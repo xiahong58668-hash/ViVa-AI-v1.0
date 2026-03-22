@@ -5,16 +5,16 @@
 
 export const APP_CONFIG = {
   // 1. 应用名称（APP_NAME）：默认值="AI 助手"，代理替换为自己的应用名称（同步生效于HTML文件界面名称）
-  APP_NAME: "ViVa AI助手",
+  APP_NAME: "测试AI助手",
 
   // 2. 基础地址（BASE_URL）：默认值="https://www.vivaapi.cn"，代理替换为专属域名
-  BASE_URL: "https://www.vivaapi.cn",
+  BASE_URL: "https://www.vivaapi.top",
 
   // 3. 价格倍率（PRICE_RATIO）：默认值=0.7，对应“在线充值价格=0.7元/1美元额度”，代理修改此数值调整价格
   PRICE_RATIO: 0.7,
 
   // 4. 微信客服（WECHAT_SERVICE）：默认值="wx123456789"，代理替换为自己的微信客服号
-  WECHAT_SERVICE: "viva-api",
+  WECHAT_SERVICE: "111111",
 
   // 5. 客服查询更多详情链接（SUPPORT_DETAIL_URL）：默认值="https://www.xxxx.cn/support"，代理替换为专属链接
   SUPPORT_DETAIL_URL: "https://ai.feishu.cn/wiki/O6Q9wrxxci898Wkj6ndcFnlknJd?from=from_copylink",
@@ -29,5 +29,5 @@ export const APP_CONFIG = {
   DESKTOP_SAVE_URL: "p.vivaapi.cn",
 
   // 9. 顶部公告内容（ANNOUNCEMENT）：代理可自定义修改
-  ANNOUNCEMENT: "公告：1、本应用不储存用户资产，请及时下载；2、生成失败请重新生成，扣费自动返还；3、OpenClaw一键安装包见主站API文档。",
+  ANNOUNCEMENT: "公告：1、本应用不储存用户资产，请及时下载。",
 };
