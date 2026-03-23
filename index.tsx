@@ -238,7 +238,8 @@ const VIDEO_MODELS = [
     desc: '标清视频', 
     supportedAspectRatios: ['9:16', '16:9'],
     options: [
-      {s: '10', q: '标清'}
+      {s: '10', q: '标清'},
+      {s: '15', q: '标清'}
     ] 
   },
   { 
@@ -1153,8 +1154,8 @@ const PRICE_DATA = [
     category: '图片创作',
     items: [
       { m: 'Gemini-2.5-Flash-Image', p: '0.063元/张' },
-      { m: 'Gemini-3.1-Flash-Image', p: '1K/2K 0.166元/张，4K 0.296元/张' },
-      { m: 'Gemini-3-Pro-Image', p: '1K/2K 0.231元/张，4K 0.591元/张' },
+      { m: 'Gemini-3.1-Flash-Image', p: '1K/2K 0.116元/张，4K 0.207元/张' },
+      { m: 'Gemini-3-Pro-Image', p: '1K/2K 0.231元/张，4K 0.414元/张' },
       { m: 'Kling Image O1', p: '0.238元/张' },
       { m: 'GPT Image 1', p: '0.055元/张' },
       { m: 'GPT Image 1.5', p: '0.055元/张' },
@@ -1164,7 +1165,7 @@ const PRICE_DATA = [
   {
     category: '视频创作',
     items: [
-      { m: 'Sora-2-all（不可用）', p: 'default分组 0.14元/条' },
+      { m: 'Sora-2-all', p: 'default分组 0.14元/条' },
       { m: 'Sora-2-vip-all（成功率低）', p: 'sora-vip分组 1.75元/条' },
       { m: 'Sora-2', p: <div className="flex flex-col items-end text-right">
         <div>官转 0.21元/秒</div>
